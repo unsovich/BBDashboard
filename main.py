@@ -6,7 +6,7 @@ import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
 # Обновленная версия
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.15 (ФИНАЛЬНАЯ СТАБИЛИЗАЦИЯ)", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.16 (ФИНАЛЬНАЯ СТАБИЛИЗАЦИЯ)", layout="wide")
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -113,6 +113,9 @@ def generate_mock_data():
 # --- ФУНКЦИЯ ПРИНУДИТЕЛЬНОЙ ОЧИСТКИ ДАННЫХ ---
 def clean_data_types(df):
     """Обеспечивает корректность типов данных и удаляет строки с критически отсутствующими данными."""
+    if not isinstance(df, pd.DataFrame):
+        return pd.DataFrame(columns=REQUIRED_COLUMNS)
+
     if df.empty:
         # Важно вернуть DF с правильными колонками, даже если она пуста
         return pd.DataFrame(columns=REQUIRED_COLUMNS)
@@ -120,11 +123,17 @@ def clean_data_types(df):
     numerical_cols = ['Минимум', 'Цель', 'Факт']
 
     # 1. Приведение даты к Python date object.
-    df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce').dt.date
+    # Защита от отсутствия колонки, если data_editor вернул неполный DF
+    if 'Дата_Начала' in df.columns:
+        df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce').dt.date
+    else:
+        # Если критическая колонка потеряна, мы считаем DF невалидным
+        return pd.DataFrame(columns=REQUIRED_COLUMNS)
 
     # 2. Приведение числовых колонок к float.
     for col in numerical_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
 
     # 3. Удаление строк, где отсутствуют ключевые параметры (KPI_ID и числовые).
     df = df.dropna(subset=['KPI_ID', 'Название'] + numerical_cols)
@@ -145,6 +154,8 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
     """Фильтрует и группирует данные: по месяцам (для Года) или по неделям (для Месяца)."""
     df = df.copy()
 
+    # Если данные уже очищены функцией clean_data_types, они должны быть в формате Python date objects.
+    # Преобразование в datetime64[ns] для Pandas-агрегации.
     df['Дата_Начала_DT'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
 
@@ -398,10 +409,15 @@ elif menu == "Ввод данных KPI":
                 "Комментарий": comment
             }
 
+            # Добавляем новую строку
             st.session_state.kpi_history = pd.concat(
                 [st.session_state.kpi_history, pd.DataFrame([new_row])],
                 ignore_index=True
             )
+
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ V2.16.1: Очистка типов сразу после добавления (для исправления пустых графиков)
+            st.session_state.kpi_history = clean_data_types(st.session_state.kpi_history)
+
             st.success(f"Показатель '{kpi_name_full}' за {date_range} успешно добавлен!")
     else:
         st.warning("Выберите действительный KPI, чтобы ввести данные.")
@@ -425,28 +441,11 @@ elif menu == "История (Редактор)":
         def save_changes():
             changes = st.session_state["editor"]
 
-            # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ V2.15: Двойная защита от некорректного объекта после удаления ---
-            # 1. Проверяем, является ли объект DataFrame и не пуст ли он
-            if not isinstance(changes, pd.DataFrame) or changes.empty:
-                # Если таблица пуста (все строки удалены или Streamlit вернул некорректный объект),
-                # сохраняем пустую DF, чтобы избежать сбоев на следующем шаге.
-                st.session_state.kpi_history = pd.DataFrame(columns=REQUIRED_COLUMNS)
-                return
-
-            # 2. Проверка, что критические колонки существуют
-            if 'Дата_Начала' not in changes.columns:
-                # Если колонки потеряны (что бывает при сбоях), сбрасываем историю в пустую DF
-                st.session_state.kpi_history = pd.DataFrame(columns=REQUIRED_COLUMNS)
-                return
-
-            # --- Защита типов ---
-            changes['Дата_Начала'] = pd.to_datetime(changes['Дата_Начала'], errors='coerce').dt.date
-
-            numerical_cols = ['Минимум', 'Цель', 'Факт']
-            for col in numerical_cols:
-                changes[col] = pd.to_numeric(changes[col], errors='coerce')
-
-            st.session_state.kpi_history = changes
+            # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ V2.16.2: Единая, надежная обработка ---
+            # Мы не пытаемся угадать, что вернул Streamlit, а сразу вызываем clean_data_types.
+            # Если объект - не DataFrame или неполный DataFrame, clean_data_types вернет пустой,
+            # но корректно структурированный DataFrame. Если данные остались - они будут очищены и сохранены.
+            st.session_state.kpi_history = clean_data_types(changes)
 
 
         # Конфигурация колонок
