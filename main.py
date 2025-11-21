@@ -112,33 +112,41 @@ def generate_mock_data():
 
 # --- ФУНКЦИЯ ПРИНУДИТЕЛЬНОЙ ОЧИСТКИ ДАННЫХ ---
 def clean_data_types(df):
-    """Обеспечивает корректность типов данных и удаляет строки с критически отсутствующими данными."""
+    """Обеспечивает корректность типов данных и удаляет только критически некорректные строки.
+    Не удаляем строки при отсутствии одного из числовых полей — это было причиной потери всей БД.
+    """
     if not isinstance(df, pd.DataFrame):
         return pd.DataFrame(columns=REQUIRED_COLUMNS)
 
+    # Если вход пуст — возвращаем корректно структурированную пустую DF
     if df.empty:
-        # Важно вернуть DF с правильными колонками, даже если она пуста
         return pd.DataFrame(columns=REQUIRED_COLUMNS)
 
-    numerical_cols = ['Минимум', 'Цель', 'Факт']
-
-    # 1. Приведение даты к Python date object.
-    # Защита от отсутствия колонки, если data_editor вернул неполный DF
+    # Приведение даты к Python date object (если есть колонка)
     if 'Дата_Начала' in df.columns:
         df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce').dt.date
     else:
-        # Если критическая колонка потеряна, мы считаем DF невалидным
         return pd.DataFrame(columns=REQUIRED_COLUMNS)
 
-    # 2. Приведение числовых колонок к float.
+    # Приведение числовых колонок к float, но не удаляем строки из-за NaN в них
+    numerical_cols = ['Минимум', 'Цель', 'Факт']
     for col in numerical_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # 3. Удаление строк, где отсутствуют ключевые параметры (KPI_ID и числовые).
-    df = df.dropna(subset=['KPI_ID', 'Название'] + numerical_cols)
+    # Удаляем только строки, где отсутствует KPI_ID или Название — эти поля критичны.
+    df = df.dropna(subset=['KPI_ID', 'Название'])
+
+    # Сбрасываем индекс (чтобы избежать проблем с неправильными индексами после редактирования)
+    df = df.reset_index(drop=True)
+
+    # Убедимся, что все нужные колонки присутствуют (добавим отсутствующие с NaN/пустотой)
+    for c in REQUIRED_COLUMNS + ['Дата_Начала_DT', 'Период']:
+        if c not in df.columns:
+            df[c] = pd.NA
 
     return df
+
 
 
 # Инициализация Session State
@@ -160,7 +168,7 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
     numerical_cols = ['Минимум', 'Цель', 'Факт']
 
     # КРИТИЧЕСКИЙ ФИЛЬТР: Отбрасываем строки, где нет даты или числа
-    df = df.dropna(subset=['Дата_Начала_DT'] + numerical_cols)
+    df = df.dropna(subset=['Дата_Начала_DT', 'Название'])
     if df.empty:
         return pd.DataFrame()
 
@@ -439,13 +447,24 @@ elif menu == "История (Редактор)":
     else:
 
         def save_changes():
-            changes = st.session_state["editor"]
+            changes = st.session_state.get("editor", None)
+            # защита: если Streamlit вернул не DataFrame — ничего не делаем
+            if not isinstance(changes, pd.DataFrame):
+                st.warning("Обновление не сохранено: неожиданный формат данных от редактора.")
+                return
 
-            # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ V2.16.2: Единая, надежная обработка ---
-            # Мы не пытаемся угадать, что вернул Streamlit, а сразу вызываем clean_data_types.
-            # Если объект - не DataFrame или неполный DataFrame, clean_data_types вернет пустой,
-            # но корректно структурированный DataFrame. Если данные остались - они будут очищены и сохранены.
-            st.session_state.kpi_history = clean_data_types(changes)
+            cleaned = clean_data_types(changes)
+
+            # Если cleaned пустой (пользователь удалил всё или данные стали некорректными),
+            # не затираем базу автоматически — оставим предыдущую версию и уведомим.
+            if cleaned.empty:
+                st.warning(
+                    "После изменений данные стали пустыми — сохранение отменено. Проверьте поля KPI_ID/Название и числовые колонки.")
+                return
+
+            # Только если всё в порядке — сохраняем
+            st.session_state.kpi_history = cleaned
+            st.success("Изменения сохранены.")
 
 
         # Конфигурация колонок
