@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.3", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.4", layout="wide")
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -52,31 +52,29 @@ def get_week_info(d: date):
     return start_of_week, week_year_id, date_range
 
 
-# --- ГЕНЕРАЦИЯ ТЕСТОВЫХ ДАННЫХ (Теперь по неделям) ---
+# --- ГЕНЕРАЦИЯ ТЕСТОВЫХ ДАННЫХ ---
 def generate_mock_data():
     data = []
     end_date = datetime.now()
     start_date = datetime(end_date.year, 1, 1)
 
     categories_map = {
-        "SMM.MONEY": ("SMM (Фандрайзинг)", "Сумма сбора SMM, руб. (Часть KPI.ФР.1)", 40000, 60000),
-        "SMM.ER": ("SMM (Вовлеченность)", "ER (Engagement Rate), % [KPI.СММ.1]", 2.5, 4.0),
-        "SMM.DCR": ("SMM (Фандрайзинг)", "DCR (Конверсия в донат), %", 1.0, 2.0),
-        "SMM.SHARE": ("SMM (Вовлеченность)", "Share Rate (Репосты), %", 0.5, 1.0),
-        "KPI.ВС.1": ("Программы", "Заполняемость центров (Верь в себя), %", 85, 95),
-        "KPI.ФИН.1": ("Финансы", "Соблюдение бюджета (отклонение), %", 5, 0),
-        "KPI.ФР.1_ОБЩИЙ": ("Финансы", "Выполнение общего плана фандрайзинга, %", 80, 100),
+        "SMM.MONEY": ("Сумма сбора SMM, руб. (Часть KPI.ФР.1)", 40000, 60000),
+        "SMM.ER": ("ER (Engagement Rate), % [KPI.СММ.1]", 2.5, 4.0),
+        "SMM.DCR": ("DCR (Конверсия в донат), %", 1.0, 2.0),
+        "SMM.SHARE": ("Share Rate (Репосты), %", 0.5, 1.0),
+        "KPI.ВС.1": ("Заполняемость центров (Верь в себя), %", 85, 95),
+        "KPI.ФИН.1": ("Соблюдение бюджета (отклонение), %", 5, 0),
+        "KPI.ФР.1_ОБЩИЙ": ("Выполнение общего плана фандрайзинга, %", 80, 100),
     }
 
-    # Генерируем данные для каждой недели с начала года
     current_date = start_date
     while current_date <= end_date:
-        # Проверяем, что это начало недели (Понедельник) или первая итерация
         if current_date.weekday() == 0 or current_date == start_date:
             start_of_week, week_id, date_range_str = get_week_info(current_date.date())
 
-            for kpi_id, (cat, name, min_val, target_val) in categories_map.items():
-                if np.random.random() > 0.1:  # 90% вероятность записи за неделю
+            for kpi_id, (name, min_val, target_val) in categories_map.items():
+                if np.random.random() > 0.1:
 
                     if kpi_id == "KPI.ФИН.1":
                         fact_val = abs(np.random.normal(2, 2))
@@ -87,11 +85,14 @@ def generate_mock_data():
 
                     fact_val = max(0, fact_val)
 
+                    # Определяем категорию из KPI_STRUCTURE
+                    category = next((cat_name for cat_name, kpis in KPI_STRUCTURE.items() if kpi_id in kpis), "Прочее")
+
                     data.append({
-                        "Дата_Начала": start_of_week,  # Дата Понедельника для фильтрации по месяцам
+                        "Дата_Начала": start_of_week,
                         "Неделя_Год": week_id,
                         "Промежуток_Дат": date_range_str,
-                        "Категория": cat,
+                        "Категория": category,
                         "KPI_ID": kpi_id,
                         "Название": name,
                         "Минимум": min_val,
@@ -100,7 +101,7 @@ def generate_mock_data():
                         "Комментарий": ""
                     })
 
-        current_date += timedelta(days=7)  # Переход к следующему понедельнику
+        current_date += timedelta(days=7)
 
     return pd.DataFrame(data)
 
@@ -116,7 +117,7 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
     """Фильтрует и группирует данные: по месяцам (для Года) или по неделям (для Месяца)."""
     df = df.copy()
 
-    # 1. Защищенное преобразование типов
+    # 1. Защищенное преобразование типов (КРИТИЧНО)
     df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
     for col in numerical_cols:
@@ -131,10 +132,12 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
         # Группировка по месяцам
         df_grouped = df.groupby([df['Дата_Начала'].dt.to_period('M'), 'Название'])[numerical_cols].mean().reset_index()
         df_grouped['Период'] = df_grouped['Дата_Начала'].dt.strftime('%B %Y')
-        # Сортировка по дате для правильной хронологии
         df_grouped = df_grouped.sort_values('Дата_Начала')
 
     else:  # Месяц (по неделям)
+        if selected_month_str is None:
+            return pd.DataFrame()
+
         y, m = map(int, selected_month_str.split('-'))
 
         # Фильтруем все записи, где дата начала недели попадает в выбранный месяц
@@ -179,7 +182,6 @@ def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
         margin=dict(l=20, r=20, t=40, b=20),
         height=350
     )
-    # Поворот меток для недель
     if len(chart_data['Период'].unique()) > 6:
         fig.update_xaxes(tickangle=45)
 
@@ -197,7 +199,6 @@ if menu == "Сводный Дашборд":
 
     col_per1, col_per2 = st.columns([1, 2])
     with col_per1:
-        # ИЗМЕНЕНИЕ: В месяце теперь разбивка по неделям
         period_type = st.radio("Период отчета:", ["Год (по месяцам)", "Месяц (по неделям)"], horizontal=True,
                                key="dashboard_period_radio")
 
@@ -212,7 +213,10 @@ if menu == "Сводный Дашборд":
             if not available_months:
                 available_months = [datetime.now().strftime('%Y-%m')]
 
-            selected_month_str = st.selectbox("Выберите месяц:", available_months, key="dashboard_month_select")
+            # По умолчанию выбираем самый последний месяц
+            default_index = 0 if available_months else 0
+            selected_month_str = st.selectbox("Выберите месяц:", available_months, index=default_index,
+                                              key="dashboard_month_select")
 
     st.divider()
 
@@ -249,7 +253,8 @@ elif menu == "SMM Эффективность":
             df_dates['Дата_Начала'] = pd.to_datetime(df_dates['Дата_Начала'])
             df_dates['Month_Str'] = df_dates['Дата_Начала'].dt.to_period('M').astype(str)
             smm_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
-            smm_month_str = st.selectbox("Месяц:", smm_months, key="smm_select")
+            default_index = 0 if smm_months else 0
+            smm_month_str = st.selectbox("Месяц:", smm_months, index=default_index, key="smm_select")
 
     st.divider()
 
@@ -286,11 +291,9 @@ elif menu == "Ввод данных KPI":
     col_date, col_cat = st.columns(2)
 
     with col_date:
-        # ИЗМЕНЕНИЕ: Ввод любой даты в отчетной неделе
         input_date = st.date_input("1. Выберите любую дату в отчетной неделе", datetime.now().date(), key="input_date")
 
     with col_cat:
-        # Выбор категории
         category = st.selectbox(
             "2. Категория",
             list(KPI_STRUCTURE.keys()),
@@ -332,14 +335,9 @@ elif menu == "Ввод данных KPI":
 
         comment = st.text_area("Комментарий / Причина отклонения", key="input_comment")
 
-        # Финальная кнопка сохранения
         submitted = st.button("💾 Сохранить в базу")
 
         if submitted:
-            # Проверка на дублирование (опционально, но полезно)
-            # if (st.session_state.kpi_history['Неделя_Год'] == week_id) & (st.session_state.kpi_history['KPI_ID'] == selected_kpi_key).any():
-            #     st.error("Данный KPI за эту неделю уже внесен. Пожалуйста, отредактируйте запись в разделе 'История'.")
-            # else:
             new_row = {
                 "Дата_Начала": start_of_week,
                 "Неделя_Год": week_id,
@@ -376,30 +374,35 @@ elif menu == "История (Редактор)":
 
         def save_changes():
             changes = st.session_state["editor"]
-            # Здесь мы не пересчитываем даты, так как это сложный процесс, просто сохраняем данные
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Преобразование даты обратно в тип date
+            changes['Дата_Начала'] = pd.to_datetime(changes['Дата_Начала'], errors='coerce').dt.date
+            # Сохранение полного набора данных, включая скрытые колонки
             st.session_state.kpi_history = changes
 
 
-        # ИЗМЕНЕНИЕ: Конфигурация колонок для недельной отчетности
+        # Конфигурация колонок: передаем все колонки и управляем их видимостью/редактированием
         column_config = {
+            # СКРЫТЫЕ СЛУЖЕБНЫЕ ПОЛЯ (KPI_ID нужен для полной структуры)
+            "KPI_ID": st.column_config.Column(visible=False, disabled=True),
+
+            # ЗАБЛОКИРОВАННЫЕ, НО ВИДИМЫЕ ПОЛЯ
             "Дата_Начала": st.column_config.DateColumn("Дата начала", format="DD.MM.YYYY", disabled=True),
             "Неделя_Год": st.column_config.TextColumn("Неделя (ГГГГ-WW)", disabled=True),
             "Промежуток_Дат": st.column_config.TextColumn("Отчетный период", disabled=True),
+
+            # РЕДАКТИРУЕМЫЕ ПОЛЯ
             "Категория": st.column_config.SelectboxColumn("Категория", options=list(KPI_STRUCTURE.keys()),
                                                           required=True),
             "Название": st.column_config.TextColumn("KPI"),
-            # Оставим как TextColumn, чтобы не ломать при редактировании
             "Минимум": st.column_config.NumberColumn("Мин", format="%.2f", step=0.01),
             "Цель": st.column_config.NumberColumn("План", format="%.2f", step=0.01),
             "Факт": st.column_config.NumberColumn("Факт", format="%.2f", step=0.01),
             "Комментарий": st.column_config.TextColumn("Комментарий", width="large")
         }
 
-        # Скрываем неинформативные колонки для чистоты
-        df_display = st.session_state.kpi_history.drop(columns=['KPI_ID'])
-
+        # Передаем ПОЛНЫЙ DataFrame из session_state
         st.data_editor(
-            df_display.sort_values("Дата_Начала", ascending=False),
+            st.session_state.kpi_history.sort_values("Дата_Начала", ascending=False),
             column_config=column_config,
             num_rows="dynamic",
             use_container_width=True,
