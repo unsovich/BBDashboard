@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.9", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.10", layout="wide")
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -140,6 +140,7 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
     df['Дата_Начала_DT'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
 
+    # Отбрасываем строки с ошибками
     df = df.dropna(subset=['Дата_Начала_DT'] + numerical_cols)
     if df.empty:
         return pd.DataFrame()
@@ -147,23 +148,21 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
     # 2. Фильтрация и группировка
     if period_type == "Год (по месяцам)":
 
-        # --- КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ v2.9: ГРУППИРОВКА ПО INT ---
-        df['Год'] = df['Дата_Начала_DT'].dt.year
-        df['Месяц'] = df['Дата_Начала_DT'].dt.month
+        # --- КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ v2.10: ГРУППИРОВКА ПО СТРОКЕ YYYY-MM ---
 
-        # Группируем по простым числам (Year и Month)
-        df_grouped = df.groupby(['Год', 'Месяц', 'Название'])[numerical_cols].mean().reset_index()
+        # Ключ для группировки и сортировки
+        df['Period_Key'] = df['Дата_Начала_DT'].dt.strftime('%Y-%m')
 
-        # Создаем надежный строковый ключ для сортировки (YYYY-MM)
-        df_grouped['Period_Sort_Key'] = df_grouped['Год'].astype(str) + '-' + \
-                                        df_grouped['Месяц'].astype(str).str.zfill(2)
+        # Метка для оси X
+        df['Период_Display'] = df['Дата_Начала_DT'].dt.strftime('%B %Y')
 
-        # Создаем метку для оси X (Месяц Год)
-        df_grouped['Период'] = df_grouped.apply(
-            lambda row: datetime(int(row['Год']), int(row['Месяц']), 1).strftime('%B %Y'), axis=1
-        )
+        # Группируем по ключу периода и Названию KPI
+        df_grouped = df.groupby(['Period_Key', 'Период_Display', 'Название'])[numerical_cols].mean().reset_index()
 
-        df_grouped = df_grouped.sort_values('Period_Sort_Key')
+        # Сортируем по надежному строковому ключу
+        df_grouped = df_grouped.sort_values('Period_Key')
+        df_grouped['Период'] = df_grouped['Период_Display']  # Финальная колонка метки
+
 
     else:  # Месяц (по неделям)
         if selected_month_str is None:
@@ -238,7 +237,6 @@ if menu == "Сводный Дашборд":
             df_dates = st.session_state.kpi_history.copy()
             df_dates['Дата_Начала_DT'] = pd.to_datetime(df_dates['Дата_Начала'], errors='coerce')
             df_dates = df_dates.dropna(subset=['Дата_Начала_DT'])
-            # Использование strftime вместо to_period для UI (v2.9)
             df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.strftime('%Y-%m')
             available_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
 
@@ -283,7 +281,6 @@ elif menu == "SMM Эффективность":
             df_dates = st.session_state.kpi_history.copy()
             df_dates['Дата_Начала_DT'] = pd.to_datetime(df_dates['Дата_Начала'], errors='coerce')
             df_dates = df_dates.dropna(subset=['Дата_Начала_DT'])
-            # Использование strftime вместо to_period для UI (v2.9)
             df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.strftime('%Y-%m')
             smm_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
             default_index = 0 if smm_months else 0
