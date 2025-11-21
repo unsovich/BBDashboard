@@ -5,9 +5,10 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.1", layout="wide")
 
 # Полная структура KPI на основе документа [Разделы I и II]
+# ИСПРАВЛЕНИЕ: Полное заполнение всех разделов
 KPI_STRUCTURE = {
     "SMM (Вовлеченность)": {
         "SMM.ER": "ER (Engagement Rate), % [KPI.СММ.1]",
@@ -16,7 +17,7 @@ KPI_STRUCTURE = {
     },
     "SMM (Фандрайзинг)": {
         "SMM.DCR": "DCR (Конверсия в донат), %",
-        "SMM.MONEY": "Сумма сбора SMM, руб. [KPI.ФР.1]"
+        "SMM.MONEY": "Сумма сбора SMM, руб. (Часть KPI.ФР.1)"
     },
     "Программы": {
         "KPI.ВС.1": "Заполняемость центров (Верь в себя), %",
@@ -25,12 +26,12 @@ KPI_STRUCTURE = {
         "KPI.ЯЖ.1": "Мониторинг цел. использования (ЯЖивой), %"
     },
     "Финансы": {
-        "KPI.ФР.1": "Выполнение общего плана фандрайзинга, %",
+        "KPI.ФР.1_ОБЩИЙ": "Выполнение общего плана фандрайзинга, %",
         "KPI.ФИН.1": "Соблюдение бюджета (отклонение), %",
         "KPI.ГР.1": "Грантовая эффективность (заявки/отчеты)"
     },
     "HR и Администрирование": {
-        "KPI.HR.1": "Внедрение планов развития / Адаптация",
+        "KPI.HR.1": "Просроченные HR-задачи (Адаптация/Развитие)",
         "KPI.ВЛ.1": "Прирост базы волонтеров, %",
         "KPI.ДЕЛ.1": "Своевременность документооборота, %",
         "KPI.АДМ.1": "Обработка звонков и посетителей, %"
@@ -46,16 +47,18 @@ def generate_mock_data():
     days_range = (end_date - start_date).days
 
     categories_map = {
-        # SMM
-        "SMM.MONEY": ("SMM (Фандрайзинг)", "Сумма сбора SMM, руб. [KPI.ФР.1]", 40000, 60000),
+        # SMM (теперь все 5)
+        "SMM.MONEY": ("SMM (Фандрайзинг)", "Сумма сбора SMM, руб. (Часть KPI.ФР.1)", 40000, 60000),
         "SMM.ER": ("SMM (Вовлеченность)", "ER (Engagement Rate), % [KPI.СММ.1]", 2.5, 4.0),
-        "SMM.DCR": ("SMM (Фандрайзинг)", "DCR (Конверсия в донат), %", 1.0, 2.0),  # Добавлен DCR
+        "SMM.DCR": ("SMM (Фандрайзинг)", "DCR (Конверсия в донат), %", 1.0, 2.0),
+        "SMM.SHARE": ("SMM (Вовлеченность)", "Share Rate (Репосты), %", 0.5, 1.0),
 
         # Программы
         "KPI.ВС.1": ("Программы", "Заполняемость центров (Верь в себя), %", 85, 95),
 
         # Финансы
-        "KPI.ФИН.1": ("Финансы", "Соблюдение бюджета (отклонение), %", 5, 0)
+        "KPI.ФИН.1": ("Финансы", "Соблюдение бюджета (отклонение), %", 5, 0),
+        "KPI.ФР.1_ОБЩИЙ": ("Финансы", "Выполнение общего плана фандрайзинга, %", 80, 100),
     }
 
     for i in range(days_range + 1):
@@ -91,21 +94,19 @@ def generate_mock_data():
 if 'kpi_history' not in st.session_state:
     st.session_state.kpi_history = generate_mock_data()
 
+# Инициализация переменной для динамического выбора KPI в форме
+if 'selected_category' not in st.session_state:
+    st.session_state.selected_category = list(KPI_STRUCTURE.keys())[0]
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (без изменений, так как они были исправлены в прошлый раз) ---
 
 def filter_data_by_period(df, period_type, selected_month_str=None):
-    """
-    Фильтрует датафрейм, принудительно преобразует типы и группирует данные для графиков.
-    ИСПРАВЛЕНИЕ: Добавлено принудительное преобразование числовых столбцов.
-    """
     df = df.copy()
 
-    # 1. Защищенное преобразование типов
     df['Дата'] = pd.to_datetime(df['Дата'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
     for col in numerical_cols:
-        # ПРИНУДИТЕЛЬНОЕ ПРЕОБРАЗОВАНИЕ В FLOAT
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
     df = df.dropna(subset=['Дата'] + numerical_cols)
@@ -113,7 +114,6 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
     if df.empty:
         return pd.DataFrame()
 
-    # 2. Фильтрация и группировка
     if period_type == "Год (по месяцам)":
         df_grouped = df.groupby([df['Дата'].dt.to_period('M'), 'Название'])[numerical_cols].mean().reset_index()
         df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%B %Y')
@@ -134,7 +134,6 @@ def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
     chart_data = df_grouped[df_grouped['Название'] == kpi_name]
 
     if chart_data.empty:
-        # Возвращаем пустую фигуру с сообщением, если данных нет
         fig = go.Figure()
         fig.update_layout(
             annotations=[dict(text="Нет данных для построения графика", showarrow=False)],
@@ -170,10 +169,10 @@ menu = st.sidebar.radio("Навигация", ["Сводный Дашборд", 
 if menu == "Сводный Дашборд":
     st.title("📊 Сводный операционный дашборд")
 
-    # -- Блок выбора периода --
     col_per1, col_per2 = st.columns([1, 2])
     with col_per1:
-        period_type = st.radio("Период отчета:", ["Год (по месяцам)", "Месяц (по дням)"], horizontal=True)
+        period_type = st.radio("Период отчета:", ["Год (по месяцам)", "Месяц (по дням)"], horizontal=True,
+                               key="dashboard_period_radio")
 
     selected_month_str = None
     if period_type == "Месяц (по дням)":
@@ -186,23 +185,20 @@ if menu == "Сводный Дашборд":
             if not available_months:
                 available_months = [datetime.now().strftime('%Y-%m')]
 
-            selected_month_str = st.selectbox("Выберите месяц:", available_months)
+            selected_month_str = st.selectbox("Выберите месяц:", available_months, key="dashboard_month_select")
 
     st.divider()
 
-    # Подготовка данных
     df_source = st.session_state.kpi_history.copy()
     df_viz = filter_data_by_period(df_source, period_type, selected_month_str)
 
     if df_viz.empty:
         st.warning("Нет данных для отображения за выбранный период. Проверьте вкладку 'История (Редактор)'.")
     else:
-        # -- Графики --
         st.subheader("Ключевые показатели (Финансы и Программы)")
         c1, c2 = st.columns(2)
 
-        # Используем КПЭ, которые точно есть в mock-данных
-        kpi_finance = "Сумма сбора SMM, руб. [KPI.ФР.1]"
+        kpi_finance = "Выполнение общего плана фандрайзинга, %"
         kpi_program = "Заполняемость центров (Верь в себя), %"
 
         with c1:
@@ -214,7 +210,6 @@ if menu == "Сводный Дашборд":
 elif menu == "SMM Эффективность":
     st.title("📱 SMM Эффективность")
 
-    # -- Блок выбора периода (Аналогично дашборду) --
     col_s1, col_s2 = st.columns([1, 2])
     with col_s1:
         smm_period_type = st.radio("Масштаб:", ["Год (по месяцам)", "Месяц (по дням)"], horizontal=True,
@@ -233,6 +228,8 @@ elif menu == "SMM Эффективность":
 
     df_source = st.session_state.kpi_history.copy()
     df_smm_viz = filter_data_by_period(df_source, smm_period_type, smm_month_str)
+
+    # ИСПРАВЛЕНИЕ: Теперь используются все 5 KPI SMM
 
     # 3.1 Вовлеченность
     st.subheader("3.1 Вовлеченность (Engagement)")
@@ -253,7 +250,7 @@ elif menu == "SMM Эффективность":
     with c_fund1:
         st.plotly_chart(render_chart(df_smm_viz, "DCR (Конверсия в донат), %"), use_container_width=True)
     with c_fund2:
-        st.plotly_chart(render_chart(df_smm_viz, "Сумма сбора SMM, руб. [KPI.ФР.1]"), use_container_width=True)
+        st.plotly_chart(render_chart(df_smm_viz, "Сумма сбора SMM, руб. (Часть KPI.ФР.1)"), use_container_width=True)
 
 
 # --- 3. ВВОД ДАННЫХ KPI ---
@@ -261,54 +258,80 @@ elif menu == "Ввод данных KPI":
     st.title("📝 Ввод новых показателей")
     st.markdown("Выберите категорию, затем показатель. Все поля обязательны.")
 
+
+    # --- ВАЖНОЕ ИСПРАВЛЕНИЕ: Использование st.session_state для сохранения выбора категории ---
+    def update_category_selection():
+        # Обновляем состояние, когда пользователь меняет категорию
+        st.session_state.selected_category = st.session_state.input_category_key
+
+
+    # Вывод формы:
     with st.form("input_form", clear_on_submit=True):
         col_cat, col_kpi = st.columns(2)
 
         with col_cat:
-            category = st.selectbox("1. Категория", list(KPI_STRUCTURE.keys()))
+            # Выбор категории. При изменении вызывается callback
+            category = st.selectbox(
+                "1. Категория",
+                list(KPI_STRUCTURE.keys()),
+                key="input_category_key",
+                on_change=update_category_selection
+            )
+
+        # Получаем доступные KPI, используя текущее состояние.
+        current_category = st.session_state.selected_category
+        available_kpis = KPI_STRUCTURE.get(current_category, {})
 
         with col_kpi:
-            available_kpis = KPI_STRUCTURE[category]
-            kpi_display = {k: v for k, v in available_kpis.items()}
-            selected_kpi_key = st.selectbox(
-                "2. Показатель",
-                list(kpi_display.keys()),
-                format_func=lambda x: kpi_display[x]
-            )
-            kpi_name_full = kpi_display[selected_kpi_key]
+            if available_kpis:
+                kpi_display = {k: v for k, v in available_kpis.items()}
+                selected_kpi_key = st.selectbox(
+                    "2. Показатель",
+                    list(kpi_display.keys()),
+                    format_func=lambda x: kpi_display[x]
+                )
+                kpi_name_full = kpi_display[selected_kpi_key]
+            else:
+                st.warning("Нет показателей для данной категории.")
+                selected_kpi_key = None
+                kpi_name_full = ""
 
         st.divider()
 
-        c_date, c_min, c_target, c_fact = st.columns(4)
-        with c_date:
-            input_date = st.date_input("Дата отчета", datetime.now())
-        with c_min:
-            val_min = st.number_input("Минимум (Красная зона)", value=0.0, step=0.01)
-        with c_target:
-            val_target = st.number_input("Цель (План)", value=0.0, step=0.01)
-        with c_fact:
-            val_fact = st.number_input("Факт", value=0.0, step=0.01)
+        if selected_kpi_key:
+            c_date, c_min, c_target, c_fact = st.columns(4)
+            with c_date:
+                input_date = st.date_input("Дата отчета", datetime.now())
+            with c_min:
+                val_min = st.number_input("Минимум (Красная зона)", value=0.0, step=0.01)
+            with c_target:
+                val_target = st.number_input("Цель (План)", value=0.0, step=0.01)
+            with c_fact:
+                val_fact = st.number_input("Факт", value=0.0, step=0.01)
 
-        comment = st.text_area("Комментарий / Причина отклонения")
+            comment = st.text_area("Комментарий / Причина отклонения")
 
-        submitted = st.form_submit_button("💾 Сохранить в базу")
+            submitted = st.form_submit_button("💾 Сохранить в базу")
 
-        if submitted:
-            new_row = {
-                "Дата": input_date,
-                "Категория": category,
-                "KPI_ID": selected_kpi_key,
-                "Название": kpi_name_full,
-                "Минимум": val_min,
-                "Цель": val_target,
-                "Факт": val_fact,
-                "Комментарий": comment
-            }
-            st.session_state.kpi_history = pd.concat(
-                [st.session_state.kpi_history, pd.DataFrame([new_row])],
-                ignore_index=True
-            )
-            st.success(f"Показатель '{kpi_name_full}' успешно добавлен!")
+            if submitted:
+                new_row = {
+                    "Дата": input_date,
+                    "Категория": current_category,
+                    "KPI_ID": selected_kpi_key,
+                    "Название": kpi_name_full,
+                    "Минимум": val_min,
+                    "Цель": val_target,
+                    "Факт": val_fact,
+                    "Комментарий": comment
+                }
+                st.session_state.kpi_history = pd.concat(
+                    [st.session_state.kpi_history, pd.DataFrame([new_row])],
+                    ignore_index=True
+                )
+                st.success(f"Показатель '{kpi_name_full}' успешно добавлен!")
+        else:
+            st.warning("Выберите действительный KPI, чтобы продолжить.")
+
 
 # --- 4. ИСТОРИЯ (РЕДАКТОР) ---
 elif menu == "История (Редактор)":
@@ -323,14 +346,11 @@ elif menu == "История (Редактор)":
     if not st.session_state.kpi_history.empty:
 
         def save_changes():
-            # Функция обратного вызова (Callback) для сохранения изменений
             changes = st.session_state["editor"]
-            # ПРИНУДИТЕЛЬНОЕ ПРЕОБРАЗОВАНИЕ ДАТЫ ПРИ СОХРАНЕНИИ
             changes['Дата'] = pd.to_datetime(changes['Дата'], errors='coerce').dt.date
             st.session_state.kpi_history = changes
 
 
-        # Конфигурация колонок
         column_config = {
             "Дата": st.column_config.DateColumn("Дата", format="DD.MM.YYYY", required=True),
             "Категория": st.column_config.SelectboxColumn("Категория", options=list(KPI_STRUCTURE.keys()),
@@ -341,7 +361,6 @@ elif menu == "История (Редактор)":
             "Комментарий": st.column_config.TextColumn("Комментарий", width="large")
         }
 
-        # Сам редактор
         st.data_editor(
             st.session_state.kpi_history.sort_values("Дата", ascending=False),
             column_config=column_config,
@@ -354,6 +373,5 @@ elif menu == "История (Редактор)":
     else:
         st.warning("База данных пуста.")
 
-    # Кнопка скачивания
     csv = st.session_state.kpi_history.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Скачать бэкап (CSV)", csv, "kpi_full_backup.csv", "text/csv")
