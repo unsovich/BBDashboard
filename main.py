@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.8", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.9", layout="wide")
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -127,7 +127,6 @@ def clean_data_types(df):
 if 'kpi_history' not in st.session_state:
     st.session_state.kpi_history = generate_mock_data()
 else:
-    # КРИТИЧЕСКИ ВАЖНО: Очистка данных из предыдущих сессий
     st.session_state.kpi_history = clean_data_types(st.session_state.kpi_history)
 
 
@@ -148,16 +147,21 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
     # 2. Фильтрация и группировка
     if period_type == "Год (по месяцам)":
 
-        # --- КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ v2.8: ЯВНАЯ АГРЕГАЦИЯ И СОРТИРОВКА ---
-        df['Месяц_Период'] = df['Дата_Начала_DT'].dt.to_period('M')
+        # --- КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ v2.9: ГРУППИРОВКА ПО INT ---
+        df['Год'] = df['Дата_Начала_DT'].dt.year
+        df['Месяц'] = df['Дата_Начала_DT'].dt.month
 
-        # Группируем по Period-объекту и Названию KPI
-        df_grouped = df.groupby(['Месяц_Период', 'Название'])[numerical_cols].mean().reset_index()
+        # Группируем по простым числам (Year и Month)
+        df_grouped = df.groupby(['Год', 'Месяц', 'Название'])[numerical_cols].mean().reset_index()
 
-        # Создаем строковый ключ для сортировки (YYYY-MM)
-        df_grouped['Period_Sort_Key'] = df_grouped['Месяц_Период'].astype(str)
+        # Создаем надежный строковый ключ для сортировки (YYYY-MM)
+        df_grouped['Period_Sort_Key'] = df_grouped['Год'].astype(str) + '-' + \
+                                        df_grouped['Месяц'].astype(str).str.zfill(2)
+
         # Создаем метку для оси X (Месяц Год)
-        df_grouped['Период'] = df_grouped['Месяц_Период'].dt.strftime('%B %Y')
+        df_grouped['Период'] = df_grouped.apply(
+            lambda row: datetime(int(row['Год']), int(row['Месяц']), 1).strftime('%B %Y'), axis=1
+        )
 
         df_grouped = df_grouped.sort_values('Period_Sort_Key')
 
@@ -234,7 +238,8 @@ if menu == "Сводный Дашборд":
             df_dates = st.session_state.kpi_history.copy()
             df_dates['Дата_Начала_DT'] = pd.to_datetime(df_dates['Дата_Начала'], errors='coerce')
             df_dates = df_dates.dropna(subset=['Дата_Начала_DT'])
-            df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.to_period('M').astype(str)
+            # Использование strftime вместо to_period для UI (v2.9)
+            df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.strftime('%Y-%m')
             available_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
 
             if not available_months:
@@ -278,7 +283,8 @@ elif menu == "SMM Эффективность":
             df_dates = st.session_state.kpi_history.copy()
             df_dates['Дата_Начала_DT'] = pd.to_datetime(df_dates['Дата_Начала'], errors='coerce')
             df_dates = df_dates.dropna(subset=['Дата_Начала_DT'])
-            df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.to_period('M').astype(str)
+            # Использование strftime вместо to_period для UI (v2.9)
+            df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.strftime('%Y-%m')
             smm_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
             default_index = 0 if smm_months else 0
             smm_month_str = st.selectbox("Месяц:", smm_months, index=default_index, key="smm_select")
@@ -417,13 +423,11 @@ elif menu == "История (Редактор)":
 
         # Конфигурация колонок
         column_config = {
-            # Нередактируемые, но видимые служебные поля
             "KPI_ID": st.column_config.TextColumn("KPI ID", disabled=True),
             "Дата_Начала": st.column_config.DateColumn("Дата начала", format="DD.MM.YYYY", disabled=True),
             "Неделя_Год": st.column_config.TextColumn("Неделя (ГГГГ-WW)", disabled=True),
             "Промежуток_Дат": st.column_config.TextColumn("Отчетный период", disabled=True),
 
-            # РЕДАКТИРУЕМЫЕ ПОЛЯ
             "Категория": st.column_config.SelectboxColumn("Категория", options=list(KPI_STRUCTURE.keys()),
                                                           required=True),
             "Название": st.column_config.TextColumn("KPI"),
