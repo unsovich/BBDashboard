@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.5", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.6", layout="wide")
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -41,13 +41,9 @@ KPI_STRUCTURE = {
 # --- ФУНКЦИЯ ДЛЯ РАСЧЕТА НЕДЕЛИ ---
 def get_week_info(d: date):
     """Возвращает ID недели (YYYY-WXX) и диапазон дат (DD.MM.YYYY - DD.MM.YYYY)."""
-    # d.weekday() возвращает 0 для Понедельника
     start_of_week = d - timedelta(days=d.weekday())
     end_of_week = start_of_week + timedelta(days=6)
-
-    # Используем ISO формат YYYY-WW для сортировки
     week_year_id = start_of_week.strftime('%Y-W%W')
-
     date_range = f"{start_of_week.strftime('%d.%m.%Y')} - {end_of_week.strftime('%d.%m.%Y')}"
     return start_of_week, week_year_id, date_range
 
@@ -103,7 +99,6 @@ def generate_mock_data():
         current_date += timedelta(days=7)
 
     df = pd.DataFrame(data)
-    # Гарантия правильных типов после мок-генерации
     df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала']).dt.date
     df['Минимум'] = pd.to_numeric(df['Минимум'], errors='coerce')
     df['Цель'] = pd.to_numeric(df['Цель'], errors='coerce')
@@ -119,10 +114,8 @@ if 'kpi_history' not in st.session_state:
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 def filter_data_by_period(df, period_type, selected_month_str=None):
-    """Фильтрует и группирует данные: по месяцам (для Года) или по неделям (для Месяца)."""
     df = df.copy()
 
-    # 1. Защищенное преобразование типов (КРИТИЧНО)
     df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
     for col in numerical_cols:
@@ -132,7 +125,6 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
     if df.empty:
         return pd.DataFrame()
 
-    # 2. Фильтрация и группировка
     if period_type == "Год (по месяцам)":
         df_grouped = df.groupby([df['Дата_Начала'].dt.to_period('M'), 'Название'])[numerical_cols].mean().reset_index()
         df_grouped['Период'] = df_grouped['Дата_Начала'].dt.strftime('%B %Y')
@@ -144,13 +136,11 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
 
         y, m = map(int, selected_month_str.split('-'))
 
-        # Фильтруем все записи, где дата начала недели попадает в выбранный месяц
         df_filtered = df[(df['Дата_Начала'].dt.year == y) & (df['Дата_Начала'].dt.month == m)].copy()
 
         if df_filtered.empty:
             return pd.DataFrame()
 
-        # Группировка по неделям
         df_grouped = df_filtered.groupby(['Неделя_Год', 'Промежуток_Дат', 'Название'])[
             numerical_cols].mean().reset_index()
         df_grouped = df_grouped.sort_values('Неделя_Год')
@@ -381,23 +371,20 @@ elif menu == "История (Редактор)":
         def save_changes():
             changes = st.session_state["editor"]
 
-            # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантия типов ---
-            # 1. Приведение даты обратно в тип date
+            # --- Защита типов ---
             changes['Дата_Начала'] = pd.to_datetime(changes['Дата_Начала'], errors='coerce').dt.date
-
-            # 2. Приведение числовых колонок к float (защита от строковых вводов)
             numerical_cols = ['Минимум', 'Цель', 'Факт']
             for col in numerical_cols:
                 changes[col] = pd.to_numeric(changes[col], errors='coerce')
 
-            # Сохранение полного набора данных
             st.session_state.kpi_history = changes
 
 
         # Конфигурация колонок
         column_config = {
-            # СКРЫТЫЕ СЛУЖЕБНЫЕ ПОЛЯ
-            "KPI_ID": st.column_config.Column(visible=False, disabled=True),
+            # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ---
+            # Замена st.column_config.Column на TextColumn. Колонка теперь нередактируемая, но ВИДИМАЯ.
+            "KPI_ID": st.column_config.TextColumn("KPI ID", disabled=True),
 
             # ЗАБЛОКИРОВАННЫЕ, НО ВИДИМЫЕ ПОЛЯ
             "Дата_Начала": st.column_config.DateColumn("Дата начала", format="DD.MM.YYYY", disabled=True),
@@ -414,7 +401,6 @@ elif menu == "История (Редактор)":
             "Комментарий": st.column_config.TextColumn("Комментарий", width="large")
         }
 
-        # Передаем ПОЛНЫЙ DataFrame
         st.data_editor(
             st.session_state.kpi_history.sort_values("Дата_Начала", ascending=False),
             column_config=column_config,
