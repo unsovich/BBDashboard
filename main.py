@@ -1,72 +1,80 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2", layout="wide")
 
-# Словарь всех KPI по категориям
+# Полная структура KPI на основе документа [Разделы I и II]
 KPI_STRUCTURE = {
     "SMM (Вовлеченность)": {
-        "SMM.ER": "Engagement Rate (ER), %",
+        "SMM.ER": "ER (Engagement Rate), % [KPI.СММ.1]",
         "SMM.SHARE": "Share Rate (Репосты), %",
         "SMM.CTR": "CTR (Клики на сайт), %"
     },
     "SMM (Фандрайзинг)": {
         "SMM.DCR": "DCR (Конверсия в донат), %",
-        "SMM.MONEY": "Сумма сбора SMM, руб."
+        "SMM.MONEY": "Сумма сбора SMM, руб. [KPI.ФР.1]"
     },
     "Программы": {
-        "PROG.FILL": "Заполняемость центров (Верь в себя), %",
-        "PROG.TIME": "Своевременность помощи (Нужна помощь), %",
-        "PROG.MONITOR": "Мониторинг использования (ЯЖивой), %"
+        "KPI.ВС.1": "Заполняемость центров (Верь в себя), %",
+        "KPI.НП.1": "Своевременность решений (Нужна помощь), %",
+        "KPI.НП.2": "Объем адресной помощи, руб.",
+        "KPI.ЯЖ.1": "Мониторинг цел. использования (ЯЖивой), %"
     },
-    "Финансы и Админ": {
-        "FIN.PLAN": "Выполнение плана фандрайзинга (Общий), %",
-        "FIN.BUDGET": "Соблюдение бюджета (Расходы), %",
-        "HR.VOL": "Прирост волонтеров, %"
+    "Финансы": {
+        "KPI.ФР.1": "Выполнение общего плана фандрайзинга, %",
+        "KPI.ФИН.1": "Соблюдение бюджета (отклонение), %",
+        "KPI.ГР.1": "Грантовая эффективность (заявки/отчеты)"
+    },
+    "HR и Администрирование": {
+        "KPI.HR.1": "Внедрение планов развития / Адаптация",
+        "KPI.ВЛ.1": "Прирост базы волонтеров, %",
+        "KPI.ДЕЛ.1": "Своевременность документооборота, %",
+        "KPI.АДМ.1": "Обработка звонков и посетителей, %"
     }
 }
 
 
-# --- ГЕНЕРАЦИЯ ТЕСТОВЫХ ДАННЫХ (ИСТОРИЯ) ---
-# Чтобы дашборд не был пустым при первом запуске
+# --- ГЕНЕРАЦИЯ ТЕСТОВЫХ ДАННЫХ ---
 def generate_mock_data():
     data = []
-    # Генерируем данные с января по текущий момент
-    start_date = datetime(2024, 1, 1)
-    categories = ["SMM.ER", "SMM.MONEY", "FIN.PLAN", "PROG.FILL"]
+    # Генерируем данные с начала года по сегодня
+    end_date = datetime.now()
+    start_date = datetime(end_date.year, 1, 1)
+    days_range = (end_date - start_date).days
 
-    for i in range(180):  # 180 дней истории
+    categories_map = {
+        "SMM.MONEY": ("SMM (Фандрайзинг)", "Сумма сбора SMM, руб. [KPI.ФР.1]", 40000, 60000),
+        "SMM.ER": ("SMM (Вовлеченность)", "ER (Engagement Rate), % [KPI.СММ.1]", 2.5, 4.0),
+        "KPI.ВС.1": ("Программы", "Заполняемость центров (Верь в себя), %", 85, 95),
+        "KPI.ФИН.1": ("Финансы", "Соблюдение бюджета (отклонение), %", 5, 0)  # Здесь цель 0% отклонения
+    }
+
+    for i in range(days_range + 1):
         current_date = start_date + timedelta(days=i)
 
-        # Пример: SMM Сборы (случайные колебания)
-        data.append({
-            "Дата": current_date,
-            "Категория": "SMM (Фандрайзинг)",
-            "KPI_ID": "SMM.MONEY",
-            "Название": "Сумма сбора SMM, руб.",
-            "Минимум": 45000,
-            "Цель": 60000,
-            "Факт": np.random.randint(40000, 75000),
-            "Комментарий": ""
-        })
+        # Добавляем данные не каждый день, чтобы было реалистично
+        # SMM метрики чаще, программные реже
+        for kpi_id, (cat, name, min_val, target_val) in categories_map.items():
+            if np.random.random() > 0.7:  # 30% вероятность записи в день
+                fact_val = np.random.normal(target_val, target_val * 0.15)
+                # Корректировка для бюджета (там меньше лучше)
+                if kpi_id == "KPI.ФИН.1":
+                    fact_val = abs(np.random.normal(2, 2))
 
-        # Пример: ER (раз в неделю)
-        if current_date.weekday() == 0:  # Раз в неделю
-            data.append({
-                "Дата": current_date,
-                "Категория": "SMM (Вовлеченность)",
-                "KPI_ID": "SMM.ER",
-                "Название": "Engagement Rate (ER), %",
-                "Минимум": 2.5,
-                "Цель": 4.0,
-                "Факт": np.random.uniform(2.0, 5.5),
-                "Комментарий": "Успешный рилс" if np.random.random() > 0.8 else ""
-            })
+                data.append({
+                    "Дата": current_date.date(),
+                    "Категория": cat,
+                    "KPI_ID": kpi_id,
+                    "Название": name,
+                    "Минимум": min_val,
+                    "Цель": target_val,
+                    "Факт": round(fact_val, 2),
+                    "Комментарий": ""
+                })
 
     return pd.DataFrame(data)
 
@@ -75,157 +83,205 @@ def generate_mock_data():
 if 'kpi_history' not in st.session_state:
     st.session_state.kpi_history = generate_mock_data()
 
-# --- БОКОВАЯ ПАНЕЛЬ ---
-st.sidebar.title("🕊️ Синяя Птица")
-menu = st.sidebar.radio("Меню", ["Сводный Дашборд", "SMM Аналитика", "Ввод данных KPI", "База данных"])
+
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
+def filter_data_by_period(df, period_type, selected_month_str=None):
+    """Фильтрует датафрейм и группирует данные для графиков"""
+    df['Дата'] = pd.to_datetime(df['Дата'])
+
+    if period_type == "Год (по месяцам)":
+        # Группировка по месяцам
+        df_grouped = df.groupby([df['Дата'].dt.to_period('M'), 'Название'])[
+            ['Минимум', 'Цель', 'Факт']].mean().reset_index()
+        df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%B %Y')  # Название месяца
+        # Сортировка
+        df_grouped = df_grouped.sort_values('Дата')
+
+    else:  # Месяц (по дням)
+        # Фильтруем по выбранному месяцу
+        # selected_month_str формата "YYYY-MM"
+        y, m = map(int, selected_month_str.split('-'))
+        df_filtered = df[(df['Дата'].dt.year == y) & (df['Дата'].dt.month == m)]
+
+        # Группировка по дням
+        df_grouped = df_filtered.groupby([df['Дата'], 'Название'])[['Минимум', 'Цель', 'Факт']].mean().reset_index()
+        df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%d.%m')
+
+    return df_grouped
 
 
-# --- ФУНКЦИЯ ОТРИСОВКИ ГРАФИКА ---
-def plot_kpi_dynamics(df, kpi_name, period_mode):
-    # Фильтрация и группировка
-    chart_data = df[df['Название'] == kpi_name].copy()
-    chart_data['Дата'] = pd.to_datetime(chart_data['Дата'])
-
-    if period_mode == "Год (по месяцам)":
-        chart_data['Период'] = chart_data['Дата'].dt.strftime('%Y-%m')
-    else:
-        chart_data['Период'] = chart_data['Дата'].dt.strftime('%Y-%m-%d')
-
-    # Агрегация (среднее для процентов, сумма для денег - упрощенно берем среднее для графика динамики выполнения)
-    # Для корректности лучше брать сумму для абсолютных величин, но для универсальности здесь use mean
-    grouped = chart_data.groupby('Период')[['Минимум', 'Цель', 'Факт']].mean().reset_index()
+def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
+    chart_data = df_grouped[df_grouped['Название'] == kpi_name]
 
     fig = go.Figure()
-
-    # Линия Цели
     fig.add_trace(
-        go.Scatter(x=grouped['Период'], y=grouped['Цель'], name='Цель', line=dict(color='green', dash='dash')))
-    # Линия Минимума
+        go.Scatter(x=chart_data['Период'], y=chart_data['Цель'], name='Цель', line=dict(color='green', dash='dash')))
+    fig.add_trace(go.Scatter(x=chart_data['Период'], y=chart_data['Минимум'], name='Минимум',
+                             line=dict(color='orange', dash='dot')))
     fig.add_trace(
-        go.Scatter(x=grouped['Период'], y=grouped['Минимум'], name='Минимум', line=dict(color='orange', dash='dot')))
-    # Линия Факта
-    fig.add_trace(go.Scatter(x=grouped['Период'], y=grouped['Факт'], name='Факт', line=dict(color='blue', width=3),
-                             mode='lines+markers'))
+        go.Scatter(x=chart_data['Период'], y=chart_data['Факт'], name='Факт', line=dict(color='blue', width=3),
+                   mode='lines+markers'))
 
-    fig.update_layout(title=f"Динамика: {kpi_name}", xaxis_title="Период", yaxis_title="Значение", height=350)
+    fig.update_layout(
+        title=f"{title_prefix}: {kpi_name}",
+        xaxis_title="Период",
+        yaxis_title="Значение",
+        margin=dict(l=20, r=20, t=40, b=20),
+        height=350
+    )
     return fig
 
 
-# --- 1. СВОДНЫЙ ОПЕРАЦИОННЫЙ ДАШБОРД ---
+# --- ИНТЕРФЕЙС ---
+
+st.sidebar.title("🕊️ Синяя Птица")
+menu = st.sidebar.radio("Навигация", ["Сводный Дашборд", "SMM Эффективность", "Ввод данных KPI", "История (Редактор)"])
+
+# --- 1. СВОДНЫЙ ДАШБОРД ---
 if menu == "Сводный Дашборд":
     st.title("📊 Сводный операционный дашборд")
 
-    # Фильтры времени
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        period_mode = st.selectbox("Детализация периода", ["Год (по месяцам)", "Месяц (по дням/неделям)"])
+    # -- Блок выбора периода --
+    col_per1, col_per2 = st.columns([1, 2])
+    with col_per1:
+        period_type = st.radio("Период отчета:", ["Год (по месяцам)", "Месяц (по дням)"], horizontal=True)
+
+    selected_month_str = None
+    if period_type == "Месяц (по дням)":
+        with col_per2:
+            # Получаем список доступных месяцев из данных
+            df_dates = st.session_state.kpi_history.copy()
+            df_dates['Дата'] = pd.to_datetime(df_dates['Дата'])
+            df_dates['Month_Str'] = df_dates['Дата'].dt.to_period('M').astype(str)
+            available_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
+
+            if not available_months:
+                available_months = [datetime.now().strftime('%Y-%m')]
+
+            selected_month_str = st.selectbox("Выберите месяц:", available_months)
 
     st.divider()
 
-    # Основные показатели (Top Level)
-    df = st.session_state.kpi_history
+    # Подготовка данных
+    df_source = st.session_state.kpi_history.copy()
+    df_viz = filter_data_by_period(df_source, period_type, selected_month_str)
 
-    # Отображаем графики для ключевых метрик разных отделов
-    st.subheader("Ключевые показатели эффективности (Top Level)")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.plotly_chart(plot_kpi_dynamics(df, "Сумма сбора SMM, руб.", period_mode), use_container_width=True)
-    with col2:
-        st.plotly_chart(plot_kpi_dynamics(df, "Engagement Rate (ER), %", period_mode), use_container_width=True)
-
-    # Таблица отклонений (где Факт < Минимума) за последний месяц
-    st.subheader("⚠️ Зона внимания (Отклонения за последние 30 дней)")
-    last_month = df[df['Дата'] > (datetime.now() - timedelta(days=30))]
-    alerts = last_month[last_month['Факт'] < last_month['Минимум']].copy()
-
-    if not alerts.empty:
-        st.dataframe(
-            alerts[['Дата', 'Название', 'Цель', 'Факт', 'Комментарий']].style.format(
-                {'Цель': '{:.1f}', 'Факт': '{:.1f}'}),
-            use_container_width=True
-        )
+    if df_viz.empty:
+        st.warning("Нет данных за выбранный период.")
     else:
-        st.success("За последние 30 дней критических отклонений не зафиксировано.")
+        # -- Графики --
+        st.subheader("Ключевые показатели (Финансы и Программы)")
+        c1, c2 = st.columns(2)
 
-# --- 2. SMM АНАЛИТИКА (Выделенный раздел) ---
-elif menu == "SMM Аналитика":
+        # Пример KPI для отображения (берем из наличия в данных)
+        kpi_finance = "Сумма сбора SMM, руб. [KPI.ФР.1]"  # Или другой финансовый
+        kpi_program = "Заполняемость центров (Верь в себя), %"
+
+        with c1:
+            st.plotly_chart(render_chart(df_viz, kpi_finance), use_container_width=True)
+        with c2:
+            st.plotly_chart(render_chart(df_viz, kpi_program), use_container_width=True)
+
+# --- 2. SMM ЭФФЕКТИВНОСТЬ ---
+elif menu == "SMM Эффективность":
     st.title("📱 SMM Эффективность")
-    st.markdown("Мониторинг вовлеченности и конверсии в пожертвования.")
 
-    df = st.session_state.kpi_history
+    # -- Блок выбора периода (Аналогично дашборду) --
+    col_s1, col_s2 = st.columns([1, 2])
+    with col_s1:
+        smm_period_type = st.radio("Масштаб:", ["Год (по месяцам)", "Месяц (по дням)"], horizontal=True,
+                                   key="smm_radio")
 
-    # Метрики "В карточках" (среднее за последний месяц)
-    last_30 = df[(df['Дата'] > (datetime.now() - timedelta(days=30))) & (df['Категория'].str.contains("SMM"))]
-
-    if not last_30.empty:
-        cols = st.columns(4)
-        metrics = [
-            ("SMM.ER", "Engagement Rate"),
-            ("SMM.SHARE", "Share Rate"),
-            ("SMM.CTR", "CTR (Клики)"),
-            ("SMM.DCR", "Conv. to Donate")
-        ]
-
-        for i, (kpi_id, label) in enumerate(metrics):
-            metric_data = last_30[last_30['KPI_ID'] == kpi_id]
-            if not metric_data.empty:
-                avg_val = metric_data['Факт'].mean()
-                target_val = metric_data['Цель'].mean()
-                delta = avg_val - target_val
-                cols[i].metric(label, f"{avg_val:.2f}%", f"{delta:.2f}%")
-            else:
-                cols[i].metric(label, "-", "-")
+    smm_month_str = None
+    if smm_period_type == "Месяц (по дням)":
+        with col_s2:
+            df_dates = st.session_state.kpi_history.copy()
+            df_dates['Дата'] = pd.to_datetime(df_dates['Дата'])
+            df_dates['Month_Str'] = df_dates['Дата'].dt.to_period('M').astype(str)
+            smm_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
+            smm_month_str = st.selectbox("Месяц:", smm_months, key="smm_select")
 
     st.divider()
 
-    # Графики вовлеченности
-    st.subheader("1. Воронка Вовлеченности")
-    tab_er, tab_sh, tab_ctr = st.tabs(["ER (Вовлеченность)", "Share Rate", "CTR"])
+    df_source = st.session_state.kpi_history.copy()
+    df_smm_viz = filter_data_by_period(df_source, smm_period_type, smm_month_str)
 
-    with tab_er:
-        st.plotly_chart(plot_kpi_dynamics(df, "Engagement Rate (ER), %", "Год (по месяцам)"), use_container_width=True)
-    with tab_sh:
-        st.plotly_chart(plot_kpi_dynamics(df, "Share Rate (Репосты), %", "Год (по месяцам)"), use_container_width=True)
+    # 3.1 Вовлеченность
+    st.subheader("3.1 Вовлеченность (Engagement)")
+    tabs = st.tabs(["ER (Engagement Rate)", "Share Rate", "CTR"])
 
-    # Графики Фандрайзинга
-    st.subheader("2. SMM Фандрайзинг")
-    st.plotly_chart(plot_kpi_dynamics(df, "Сумма сбора SMM, руб.", "Год (по месяцам)"), use_container_width=True)
+    with tabs[0]:
+        if not df_smm_viz[df_smm_viz['Название'].str.contains("ER")].empty:
+            st.plotly_chart(render_chart(df_smm_viz, "ER (Engagement Rate), % [KPI.СММ.1]"), use_container_width=True)
+        else:
+            st.info("Нет данных по ER за этот период")
 
-# --- 3. ВВОД ДАННЫХ (ПЛАН / ФАКТ) ---
+    with tabs[1]:
+        # Для примера, если данных нет, график будет пустой, обработаем это
+        if not df_smm_viz[df_smm_viz['Название'].str.contains("Share")].empty:
+            st.plotly_chart(render_chart(df_smm_viz, "Share Rate (Репосты), %"), use_container_width=True)
+        else:
+            st.info("Нет данных по репостам")
+
+    # 3.2 Фандрайзинг
+    st.subheader("3.2 SMM Фандрайзинг")
+    c_fund1, c_fund2 = st.columns(2)
+    with c_fund1:
+        if not df_smm_viz[df_smm_viz['Название'].str.contains("DCR")].empty:
+            st.plotly_chart(render_chart(df_smm_viz, "DCR (Конверсия в донат), %"), use_container_width=True)
+        else:
+            st.info("Нет данных по DCR")
+    with c_fund2:
+        if not df_smm_viz[df_smm_viz['Название'].str.contains("Сумма")].empty:
+            st.plotly_chart(render_chart(df_smm_viz, "Сумма сбора SMM, руб. [KPI.ФР.1]"), use_container_width=True)
+        else:
+            st.info("Нет данных по суммам сбора")
+
+
+# --- 3. ВВОД ДАННЫХ KPI ---
 elif menu == "Ввод данных KPI":
-    st.title("📝 Ввод данных KPI")
-    st.info("Внесение плановых и фактических показателей за отчетный период.")
+    st.title("📝 Ввод новых показателей")
+    st.markdown("Выберите категорию, затем показатель. Все поля обязательны.")
 
-    with st.form("kpi_input_form", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            input_date = st.date_input("Отчетная дата", datetime.now())
-            category = st.selectbox("Категория", list(KPI_STRUCTURE.keys()))
+    with st.form("input_form", clear_on_submit=True):
+        col_cat, col_kpi = st.columns(2)
 
-        with c2:
-            # Динамическое обновление списка KPI на основе категории
-            kpi_options = KPI_STRUCTURE[category]
-            selected_kpi_key = st.selectbox("Показатель", list(kpi_options.keys()),
-                                            format_func=lambda x: kpi_options[x])
-            kpi_name_full = kpi_options[selected_kpi_key]
+        with col_cat:
+            # Выбор категории
+            category = st.selectbox("1. Категория", list(KPI_STRUCTURE.keys()))
 
-        st.subheader("Значения")
-        col_val1, col_val2, col_val3 = st.columns(3)
-        with col_val1:
-            val_min = st.number_input("Минимум (Красная зона)", value=0.0)
-        with col_val2:
-            val_target = st.number_input("Цель (План)", value=0.0)
-        with col_val3:
-            val_fact = st.number_input("Факт", value=0.0)
+        with col_kpi:
+            # Выбор KPI зависимый от категории
+            available_kpis = KPI_STRUCTURE[category]
+            # Формируем список для selectbox: Ключ -> Значение
+            kpi_display = {k: v for k, v in available_kpis.items()}
+            selected_kpi_key = st.selectbox(
+                "2. Показатель",
+                list(kpi_display.keys()),
+                format_func=lambda x: kpi_display[x]
+            )
+            kpi_name_full = kpi_display[selected_kpi_key]
 
-        comment = st.text_area("Комментарий (причины отклонений, корректирующие действия)")
+        st.divider()
 
-        submitted = st.form_submit_button("Сохранить показатель")
+        c_date, c_min, c_target, c_fact = st.columns(4)
+        with c_date:
+            input_date = st.date_input("Дата отчета", datetime.now())
+        with c_min:
+            val_min = st.number_input("Минимум (Красная зона)", value=0.0, step=0.1)
+        with c_target:
+            val_target = st.number_input("Цель (План)", value=0.0, step=0.1)
+        with c_fact:
+            val_fact = st.number_input("Факт", value=0.0, step=0.1)
+
+        comment = st.text_area("Комментарий / Причина отклонения")
+
+        submitted = st.form_submit_button("💾 Сохранить в базу")
 
         if submitted:
-            new_record = {
-                "Дата": pd.to_datetime(input_date),
+            new_row = {
+                "Дата": input_date,
                 "Категория": category,
                 "KPI_ID": selected_kpi_key,
                 "Название": kpi_name_full,
@@ -234,44 +290,53 @@ elif menu == "Ввод данных KPI":
                 "Факт": val_fact,
                 "Комментарий": comment
             }
-            # Добавляем в историю (через concat для DataFrame)
-            new_df = pd.DataFrame([new_record])
-            st.session_state.kpi_history = pd.concat([st.session_state.kpi_history, new_df], ignore_index=True)
-            st.success(f"Данные по {kpi_name_full} сохранены!")
+            # Добавление в session_state
+            st.session_state.kpi_history = pd.concat(
+                [st.session_state.kpi_history, pd.DataFrame([new_row])],
+                ignore_index=True
+            )
+            st.success(f"Показатель '{kpi_name_full}' успешно добавлен!")
 
-# --- 4. БАЗА ДАННЫХ ---
-elif menu == "База данных":
-    st.title("🗄️ История показателей")
+# --- 4. ИСТОРИЯ (РЕДАКТОР) ---
+elif menu == "История (Редактор)":
+    st.title("🗄️ Управление данными (CRUD)")
+    st.info("""
+    **Инструкция:**
+    * Для **редактирования**: кликните дважды по ячейке, измените значение и нажмите Enter.
+    * Для **удаления**: выделите строки (галочкой слева) и нажмите клавишу `Delete` (или используйте корзину, если она появляется в UI).
+    * Все изменения сохраняются автоматически.
+    """)
 
-    df = st.session_state.kpi_history
-
-    # Фильтры таблицы
-    kpi_filter = st.multiselect("Фильтр по KPI", df['Название'].unique())
-    if kpi_filter:
-        df = df[df['Название'].isin(kpi_filter)]
-
-    st.dataframe(
-        df.sort_values(by="Дата", ascending=False),
-        use_container_width=True,
-        column_config={
+    if not st.session_state.kpi_history.empty:
+        # Конфигурация колонок для удобного редактирования
+        column_config = {
             "Дата": st.column_config.DateColumn("Дата", format="DD.MM.YYYY"),
+            "Категория": st.column_config.SelectboxColumn("Категория", options=list(KPI_STRUCTURE.keys()),
+                                                          required=True),
             "Минимум": st.column_config.NumberColumn("Мин", format="%.2f"),
             "Цель": st.column_config.NumberColumn("План", format="%.2f"),
             "Факт": st.column_config.NumberColumn("Факт", format="%.2f"),
+            "Комментарий": st.column_config.TextColumn("Комментарий", width="large")
         }
-    )
 
+        # Виджет data_editor позволяет редактировать и удалять (num_rows="dynamic")
+        edited_df = st.data_editor(
+            st.session_state.kpi_history.sort_values("Дата", ascending=False),
+            column_config=column_config,
+            num_rows="dynamic",  # Позволяет добавлять и удалять строки
+            use_container_width=True,
+            key="editor"
+        )
 
-    # Кнопка скачивания
-    @st.cache_data
-    def convert_df(df):
-        return df.to_csv(index=False).encode('utf-8')
+        # Обновление session_state при изменениях
+        # Примечание: st.data_editor возвращает измененный df, мы просто перезаписываем его
+        if not edited_df.equals(st.session_state.kpi_history):
+            st.session_state.kpi_history = edited_df
+            st.rerun()  # Перезагрузка для обновления графиков
 
+    else:
+        st.warning("База данных пуста.")
 
-    csv = convert_df(df)
-    st.download_button(
-        label="📥 Скачать CSV",
-        data=csv,
-        file_name='kpi_history.csv',
-        mime='text/csv',
-    )
+    # Кнопка скачивания полной базы
+    csv = st.session_state.kpi_history.to_csv(index=False).encode('utf-8')
+    st.download_button("📥 Скачать бэкап (CSV)", csv, "kpi_full_backup.csv", "text/csv")
