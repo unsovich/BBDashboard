@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.6", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.7", layout="wide")
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -55,13 +55,13 @@ def generate_mock_data():
     start_date = datetime(end_date.year, 1, 1)
 
     categories_map = {
-        "SMM.MONEY": ("Сумма сбора SMM, руб. (Часть KPI.ФР.1)", 40000, 60000),
+        "SMM.MONEY": ("Сумма сбора SMM, руб. (Часть KPI.ФР.1)", 40000.0, 60000.0),
         "SMM.ER": ("ER (Engagement Rate), % [KPI.СММ.1]", 2.5, 4.0),
         "SMM.DCR": ("DCR (Конверсия в донат), %", 1.0, 2.0),
         "SMM.SHARE": ("Share Rate (Репосты), %", 0.5, 1.0),
-        "KPI.ВС.1": ("Заполняемость центров (Верь в себя), %", 85, 95),
-        "KPI.ФИН.1": ("Соблюдение бюджета (отклонение), %", 5, 0),
-        "KPI.ФР.1_ОБЩИЙ": ("Выполнение общего плана фандрайзинга, %", 80, 100),
+        "KPI.ВС.1": ("Заполняемость центров (Верь в себя), %", 85.0, 95.0),
+        "KPI.ФИН.1": ("Соблюдение бюджета (отклонение), %", 5.0, 0.0),
+        "KPI.ФР.1_ОБЩИЙ": ("Выполнение общего плана фандрайзинга, %", 80.0, 100.0),
     }
 
     current_date = start_date
@@ -75,7 +75,7 @@ def generate_mock_data():
                     if kpi_id == "KPI.ФИН.1":
                         fact_val = abs(np.random.normal(2, 2))
                     elif 'MONEY' in kpi_id:
-                        fact_val = np.random.randint(min_val * 0.8, target_val * 1.2)
+                        fact_val = np.random.uniform(min_val * 0.8, target_val * 1.2)
                     else:
                         fact_val = np.random.normal(target_val, target_val * 0.15)
 
@@ -99,36 +99,60 @@ def generate_mock_data():
         current_date += timedelta(days=7)
 
     df = pd.DataFrame(data)
+    # Гарантируем, что даты - это Python date объекты
     df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала']).dt.date
-    df['Минимум'] = pd.to_numeric(df['Минимум'], errors='coerce')
-    df['Цель'] = pd.to_numeric(df['Цель'], errors='coerce')
-    df['Факт'] = pd.to_numeric(df['Факт'], errors='coerce')
+    return df
+
+
+# --- ФУНКЦИЯ ПРИНУДИТЕЛЬНОЙ ОЧИСТКИ ДАННЫХ (НОВАЯ) ---
+def clean_data_types(df):
+    """Обеспечивает корректность типов данных в ключевых колонках."""
+    if df.empty:
+        return df
+
+    # 1. Приведение даты к Python date object
+    df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce').dt.date
+
+    # 2. Приведение числовых колонок к float
+    numerical_cols = ['Минимум', 'Цель', 'Факт']
+    for col in numerical_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # 3. Удаление строк, где отсутствуют ключевые параметры (для безопасности)
+    df = df.dropna(subset=['Дата_Начала', 'KPI_ID', 'Название'] + numerical_cols)
+
     return df
 
 
 # Инициализация Session State
 if 'kpi_history' not in st.session_state:
     st.session_state.kpi_history = generate_mock_data()
+else:
+    # КРИТИЧЕСКИ ВАЖНО: Очистка данных из предыдущих сессий
+    st.session_state.kpi_history = clean_data_types(st.session_state.kpi_history)
 
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 def filter_data_by_period(df, period_type, selected_month_str=None):
+    """Фильтрует и группирует данные, используя надежную DT-колонку."""
     df = df.copy()
 
-    df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
+    # 1. Создание надежной Pandas Datetime колонки для манипуляций
+    df['Дата_Начала_DT'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
-    for col in numerical_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    df = df.dropna(subset=['Дата_Начала'] + numerical_cols)
+    # Отбрасываем любые строки, где дата или числовые значения отсутствуют (NaN)
+    df = df.dropna(subset=['Дата_Начала_DT'] + numerical_cols)
     if df.empty:
         return pd.DataFrame()
 
+    # 2. Фильтрация и группировка
     if period_type == "Год (по месяцам)":
-        df_grouped = df.groupby([df['Дата_Начала'].dt.to_period('M'), 'Название'])[numerical_cols].mean().reset_index()
-        df_grouped['Период'] = df_grouped['Дата_Начала'].dt.strftime('%B %Y')
-        df_grouped = df_grouped.sort_values('Дата_Начала')
+        df_grouped = df.groupby([df['Дата_Начала_DT'].dt.to_period('M'), 'Название'])[
+            numerical_cols].mean().reset_index()
+        df_grouped['Период'] = df_grouped['Дата_Начала_DT'].dt.strftime('%B %Y')
+        df_grouped = df_grouped.sort_values('Дата_Начала_DT')
 
     else:  # Месяц (по неделям)
         if selected_month_str is None:
@@ -136,7 +160,8 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
 
         y, m = map(int, selected_month_str.split('-'))
 
-        df_filtered = df[(df['Дата_Начала'].dt.year == y) & (df['Дата_Начала'].dt.month == m)].copy()
+        # Фильтрация по году и месяцу надежной DT-колонки
+        df_filtered = df[(df['Дата_Начала_DT'].dt.year == y) & (df['Дата_Начала_DT'].dt.month == m)].copy()
 
         if df_filtered.empty:
             return pd.DataFrame()
@@ -200,8 +225,9 @@ if menu == "Сводный Дашборд":
     if period_type == "Месяц (по неделям)":
         with col_per2:
             df_dates = st.session_state.kpi_history.copy()
-            df_dates['Дата_Начала'] = pd.to_datetime(df_dates['Дата_Начала'])
-            df_dates['Month_Str'] = df_dates['Дата_Начала'].dt.to_period('M').astype(str)
+            df_dates['Дата_Начала_DT'] = pd.to_datetime(df_dates['Дата_Начала'], errors='coerce')
+            df_dates = df_dates.dropna(subset=['Дата_Начала_DT'])
+            df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.to_period('M').astype(str)
             available_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
 
             if not available_months:
@@ -243,8 +269,9 @@ elif menu == "SMM Эффективность":
     if smm_period_type == "Месяц (по неделям)":
         with col_s2:
             df_dates = st.session_state.kpi_history.copy()
-            df_dates['Дата_Начала'] = pd.to_datetime(df_dates['Дата_Начала'])
-            df_dates['Month_Str'] = df_dates['Дата_Начала'].dt.to_period('M').astype(str)
+            df_dates['Дата_Начала_DT'] = pd.to_datetime(df_dates['Дата_Начала'], errors='coerce')
+            df_dates = df_dates.dropna(subset=['Дата_Начала_DT'])
+            df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.to_period('M').astype(str)
             smm_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
             default_index = 0 if smm_months else 0
             smm_month_str = st.selectbox("Месяц:", smm_months, index=default_index, key="smm_select")
@@ -372,7 +399,10 @@ elif menu == "История (Редактор)":
             changes = st.session_state["editor"]
 
             # --- Защита типов ---
+            # Приведение даты обратно в тип date
             changes['Дата_Начала'] = pd.to_datetime(changes['Дата_Начала'], errors='coerce').dt.date
+
+            # Приведение числовых колонок к float
             numerical_cols = ['Минимум', 'Цель', 'Факт']
             for col in numerical_cols:
                 changes[col] = pd.to_numeric(changes[col], errors='coerce')
@@ -382,11 +412,8 @@ elif menu == "История (Редактор)":
 
         # Конфигурация колонок
         column_config = {
-            # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ---
-            # Замена st.column_config.Column на TextColumn. Колонка теперь нередактируемая, но ВИДИМАЯ.
+            # Нередактируемые, но видимые служебные поля (KPI_ID нужен для полной структуры)
             "KPI_ID": st.column_config.TextColumn("KPI ID", disabled=True),
-
-            # ЗАБЛОКИРОВАННЫЕ, НО ВИДИМЫЕ ПОЛЯ
             "Дата_Начала": st.column_config.DateColumn("Дата начала", format="DD.MM.YYYY", disabled=True),
             "Неделя_Год": st.column_config.TextColumn("Неделя (ГГГГ-WW)", disabled=True),
             "Промежуток_Дат": st.column_config.TextColumn("Отчетный период", disabled=True),
