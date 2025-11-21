@@ -5,10 +5,9 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.1", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.2", layout="wide")
 
 # Полная структура KPI на основе документа [Разделы I и II]
-# ИСПРАВЛЕНИЕ: Полное заполнение всех разделов
 KPI_STRUCTURE = {
     "SMM (Вовлеченность)": {
         "SMM.ER": "ER (Engagement Rate), % [KPI.СММ.1]",
@@ -46,17 +45,13 @@ def generate_mock_data():
     start_date = datetime(end_date.year, 1, 1)
     days_range = (end_date - start_date).days
 
+    # Расширенный список для мок-данных, чтобы все графики работали сразу
     categories_map = {
-        # SMM (теперь все 5)
         "SMM.MONEY": ("SMM (Фандрайзинг)", "Сумма сбора SMM, руб. (Часть KPI.ФР.1)", 40000, 60000),
         "SMM.ER": ("SMM (Вовлеченность)", "ER (Engagement Rate), % [KPI.СММ.1]", 2.5, 4.0),
         "SMM.DCR": ("SMM (Фандрайзинг)", "DCR (Конверсия в донат), %", 1.0, 2.0),
         "SMM.SHARE": ("SMM (Вовлеченность)", "Share Rate (Репосты), %", 0.5, 1.0),
-
-        # Программы
         "KPI.ВС.1": ("Программы", "Заполняемость центров (Верь в себя), %", 85, 95),
-
-        # Финансы
         "KPI.ФИН.1": ("Финансы", "Соблюдение бюджета (отклонение), %", 5, 0),
         "KPI.ФР.1_ОБЩИЙ": ("Финансы", "Выполнение общего плана фандрайзинга, %", 80, 100),
     }
@@ -65,7 +60,7 @@ def generate_mock_data():
         current_date = start_date + timedelta(days=i)
 
         for kpi_id, (cat, name, min_val, target_val) in categories_map.items():
-            if np.random.random() > 0.7:  # 30% вероятность записи в день
+            if np.random.random() > 0.7:
 
                 if kpi_id == "KPI.ФИН.1":
                     fact_val = abs(np.random.normal(2, 2))
@@ -94,23 +89,15 @@ def generate_mock_data():
 if 'kpi_history' not in st.session_state:
     st.session_state.kpi_history = generate_mock_data()
 
-# Инициализация переменной для динамического выбора KPI в форме
-if 'selected_category' not in st.session_state:
-    st.session_state.selected_category = list(KPI_STRUCTURE.keys())[0]
 
-
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (без изменений, так как они были исправлены в прошлый раз) ---
-
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (без изменений) ---
 def filter_data_by_period(df, period_type, selected_month_str=None):
     df = df.copy()
-
     df['Дата'] = pd.to_datetime(df['Дата'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
     for col in numerical_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce')
-
     df = df.dropna(subset=['Дата'] + numerical_cols)
-
     if df.empty:
         return pd.DataFrame()
 
@@ -118,11 +105,9 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
         df_grouped = df.groupby([df['Дата'].dt.to_period('M'), 'Название'])[numerical_cols].mean().reset_index()
         df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%B %Y')
         df_grouped = df_grouped.sort_values('Дата')
-
-    else:  # Месяц (по дням)
+    else:
         y, m = map(int, selected_month_str.split('-'))
         df_filtered = df[(df['Дата'].dt.year == y) & (df['Дата'].dt.month == m)].copy()
-
         df_grouped = df_filtered.groupby([df_filtered['Дата'], 'Название'])[numerical_cols].mean().reset_index()
         df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%d.%m')
         df_grouped = df_grouped.sort_values('Дата')
@@ -165,7 +150,7 @@ def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
 st.sidebar.title("🕊️ Синяя Птица")
 menu = st.sidebar.radio("Навигация", ["Сводный Дашборд", "SMM Эффективность", "Ввод данных KPI", "История (Редактор)"])
 
-# --- 1. СВОДНЫЙ ДАШБОРД ---
+# --- 1. СВОДНЫЙ ДАШБОРД (без изменений) ---
 if menu == "Сводный Дашборд":
     st.title("📊 Сводный операционный дашборд")
 
@@ -206,7 +191,7 @@ if menu == "Сводный Дашборд":
         with c2:
             st.plotly_chart(render_chart(df_viz, kpi_program), use_container_width=True)
 
-# --- 2. SMM ЭФФЕКТИВНОСТЬ ---
+# --- 2. SMM ЭФФЕКТИВНОСТЬ (без изменений) ---
 elif menu == "SMM Эффективность":
     st.title("📱 SMM Эффективность")
 
@@ -228,8 +213,6 @@ elif menu == "SMM Эффективность":
 
     df_source = st.session_state.kpi_history.copy()
     df_smm_viz = filter_data_by_period(df_source, smm_period_type, smm_month_str)
-
-    # ИСПРАВЛЕНИЕ: Теперь используются все 5 KPI SMM
 
     # 3.1 Вовлеченность
     st.subheader("3.1 Вовлеченность (Engagement)")
@@ -258,79 +241,76 @@ elif menu == "Ввод данных KPI":
     st.title("📝 Ввод новых показателей")
     st.markdown("Выберите категорию, затем показатель. Все поля обязательны.")
 
+    # --- ИСПРАВЛЕННАЯ ЛОГИКА: Без st.form и callback, relying on natural rerun ---
+    col_cat, col_kpi = st.columns(2)
 
-    # --- ВАЖНОЕ ИСПРАВЛЕНИЕ: Использование st.session_state для сохранения выбора категории ---
-    def update_category_selection():
-        # Обновляем состояние, когда пользователь меняет категорию
-        st.session_state.selected_category = st.session_state.input_category_key
+    with col_cat:
+        # Выбор категории. При изменении Streamlit перерисовывает страницу
+        category = st.selectbox(
+            "1. Категория",
+            list(KPI_STRUCTURE.keys()),
+            key="input_category_key"  # Ключ для сохранения выбора
+        )
 
+    # Получаем доступные KPI, используя текущий выбранный элемент (который Streamlit сохранил по ключу)
+    available_kpis = KPI_STRUCTURE.get(category, {})
 
-    # Вывод формы:
-    with st.form("input_form", clear_on_submit=True):
-        col_cat, col_kpi = st.columns(2)
-
-        with col_cat:
-            # Выбор категории. При изменении вызывается callback
-            category = st.selectbox(
-                "1. Категория",
-                list(KPI_STRUCTURE.keys()),
-                key="input_category_key",
-                on_change=update_category_selection
+    with col_kpi:
+        if available_kpis:
+            kpi_display = {k: v for k, v in available_kpis.items()}
+            # Второй selectbox, который зависит от первого
+            selected_kpi_key = st.selectbox(
+                "2. Показатель",
+                list(kpi_display.keys()),
+                format_func=lambda x: kpi_display[x],
+                key="input_kpi_key"
             )
-
-        # Получаем доступные KPI, используя текущее состояние.
-        current_category = st.session_state.selected_category
-        available_kpis = KPI_STRUCTURE.get(current_category, {})
-
-        with col_kpi:
-            if available_kpis:
-                kpi_display = {k: v for k, v in available_kpis.items()}
-                selected_kpi_key = st.selectbox(
-                    "2. Показатель",
-                    list(kpi_display.keys()),
-                    format_func=lambda x: kpi_display[x]
-                )
-                kpi_name_full = kpi_display[selected_kpi_key]
-            else:
-                st.warning("Нет показателей для данной категории.")
-                selected_kpi_key = None
-                kpi_name_full = ""
-
-        st.divider()
-
-        if selected_kpi_key:
-            c_date, c_min, c_target, c_fact = st.columns(4)
-            with c_date:
-                input_date = st.date_input("Дата отчета", datetime.now())
-            with c_min:
-                val_min = st.number_input("Минимум (Красная зона)", value=0.0, step=0.01)
-            with c_target:
-                val_target = st.number_input("Цель (План)", value=0.0, step=0.01)
-            with c_fact:
-                val_fact = st.number_input("Факт", value=0.0, step=0.01)
-
-            comment = st.text_area("Комментарий / Причина отклонения")
-
-            submitted = st.form_submit_button("💾 Сохранить в базу")
-
-            if submitted:
-                new_row = {
-                    "Дата": input_date,
-                    "Категория": current_category,
-                    "KPI_ID": selected_kpi_key,
-                    "Название": kpi_name_full,
-                    "Минимум": val_min,
-                    "Цель": val_target,
-                    "Факт": val_fact,
-                    "Комментарий": comment
-                }
-                st.session_state.kpi_history = pd.concat(
-                    [st.session_state.kpi_history, pd.DataFrame([new_row])],
-                    ignore_index=True
-                )
-                st.success(f"Показатель '{kpi_name_full}' успешно добавлен!")
+            kpi_name_full = kpi_display[selected_kpi_key]
         else:
-            st.warning("Выберите действительный KPI, чтобы продолжить.")
+            st.warning("Нет показателей для данной категории.")
+            selected_kpi_key = None
+            kpi_name_full = ""
+
+    st.divider()
+
+    # Сбор остальных данных
+    if selected_kpi_key:
+        c_date, c_min, c_target, c_fact = st.columns(4)
+        with c_date:
+            input_date = st.date_input("Дата отчета", datetime.now(), key="input_date")
+        with c_min:
+            val_min = st.number_input("Минимум (Красная зона)", value=0.0, step=0.01, key="input_min")
+        with c_target:
+            val_target = st.number_input("Цель (План)", value=0.0, step=0.01, key="input_target")
+        with c_fact:
+            val_fact = st.number_input("Факт", value=0.0, step=0.01, key="input_fact")
+
+        comment = st.text_area("Комментарий / Причина отклонения", key="input_comment")
+
+        # Финальная кнопка сохранения
+        submitted = st.button("💾 Сохранить в базу")
+
+        if submitted:
+            new_row = {
+                "Дата": input_date,
+                "Категория": category,
+                "KPI_ID": selected_kpi_key,
+                "Название": kpi_name_full,
+                "Минимум": val_min,
+                "Цель": val_target,
+                "Факт": val_fact,
+                "Комментарий": comment
+            }
+            # Добавление в session_state
+            st.session_state.kpi_history = pd.concat(
+                [st.session_state.kpi_history, pd.DataFrame([new_row])],
+                ignore_index=True
+            )
+            st.success(f"Показатель '{kpi_name_full}' успешно добавлен!")
+            # Принудительная очистка полей формы после успешной отправки (опционально)
+            # st.experimental_rerun()
+    else:
+        st.warning("Выберите действительный KPI, чтобы ввести данные.")
 
 
 # --- 4. ИСТОРИЯ (РЕДАКТОР) ---
@@ -347,6 +327,7 @@ elif menu == "История (Редактор)":
 
         def save_changes():
             changes = st.session_state["editor"]
+            # Приведение даты к правильному формату
             changes['Дата'] = pd.to_datetime(changes['Дата'], errors='coerce').dt.date
             st.session_state.kpi_history = changes
 
