@@ -41,29 +41,37 @@ KPI_STRUCTURE = {
 # --- ГЕНЕРАЦИЯ ТЕСТОВЫХ ДАННЫХ ---
 def generate_mock_data():
     data = []
-    # Генерируем данные с начала года по сегодня
     end_date = datetime.now()
     start_date = datetime(end_date.year, 1, 1)
     days_range = (end_date - start_date).days
 
     categories_map = {
+        # SMM
         "SMM.MONEY": ("SMM (Фандрайзинг)", "Сумма сбора SMM, руб. [KPI.ФР.1]", 40000, 60000),
         "SMM.ER": ("SMM (Вовлеченность)", "ER (Engagement Rate), % [KPI.СММ.1]", 2.5, 4.0),
+        "SMM.DCR": ("SMM (Фандрайзинг)", "DCR (Конверсия в донат), %", 1.0, 2.0),  # Добавлен DCR
+
+        # Программы
         "KPI.ВС.1": ("Программы", "Заполняемость центров (Верь в себя), %", 85, 95),
-        "KPI.ФИН.1": ("Финансы", "Соблюдение бюджета (отклонение), %", 5, 0)  # Здесь цель 0% отклонения
+
+        # Финансы
+        "KPI.ФИН.1": ("Финансы", "Соблюдение бюджета (отклонение), %", 5, 0)
     }
 
     for i in range(days_range + 1):
         current_date = start_date + timedelta(days=i)
 
-        # Добавляем данные не каждый день, чтобы было реалистично
-        # SMM метрики чаще, программные реже
         for kpi_id, (cat, name, min_val, target_val) in categories_map.items():
             if np.random.random() > 0.7:  # 30% вероятность записи в день
-                fact_val = np.random.normal(target_val, target_val * 0.15)
-                # Корректировка для бюджета (там меньше лучше)
+
                 if kpi_id == "KPI.ФИН.1":
                     fact_val = abs(np.random.normal(2, 2))
+                elif 'MONEY' in kpi_id:
+                    fact_val = np.random.randint(min_val * 0.8, target_val * 1.2)
+                else:
+                    fact_val = np.random.normal(target_val, target_val * 0.15)
+
+                fact_val = max(0, fact_val)
 
                 data.append({
                     "Дата": current_date.date(),
@@ -87,32 +95,52 @@ if 'kpi_history' not in st.session_state:
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 def filter_data_by_period(df, period_type, selected_month_str=None):
-    """Фильтрует датафрейм и группирует данные для графиков"""
-    df['Дата'] = pd.to_datetime(df['Дата'])
+    """
+    Фильтрует датафрейм, принудительно преобразует типы и группирует данные для графиков.
+    ИСПРАВЛЕНИЕ: Добавлено принудительное преобразование числовых столбцов.
+    """
+    df = df.copy()
 
+    # 1. Защищенное преобразование типов
+    df['Дата'] = pd.to_datetime(df['Дата'], errors='coerce')
+    numerical_cols = ['Минимум', 'Цель', 'Факт']
+    for col in numerical_cols:
+        # ПРИНУДИТЕЛЬНОЕ ПРЕОБРАЗОВАНИЕ В FLOAT
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    df = df.dropna(subset=['Дата'] + numerical_cols)
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # 2. Фильтрация и группировка
     if period_type == "Год (по месяцам)":
-        # Группировка по месяцам
-        df_grouped = df.groupby([df['Дата'].dt.to_period('M'), 'Название'])[
-            ['Минимум', 'Цель', 'Факт']].mean().reset_index()
-        df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%B %Y')  # Название месяца
-        # Сортировка
+        df_grouped = df.groupby([df['Дата'].dt.to_period('M'), 'Название'])[numerical_cols].mean().reset_index()
+        df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%B %Y')
         df_grouped = df_grouped.sort_values('Дата')
 
     else:  # Месяц (по дням)
-        # Фильтруем по выбранному месяцу
-        # selected_month_str формата "YYYY-MM"
         y, m = map(int, selected_month_str.split('-'))
-        df_filtered = df[(df['Дата'].dt.year == y) & (df['Дата'].dt.month == m)]
+        df_filtered = df[(df['Дата'].dt.year == y) & (df['Дата'].dt.month == m)].copy()
 
-        # Группировка по дням
-        df_grouped = df_filtered.groupby([df['Дата'], 'Название'])[['Минимум', 'Цель', 'Факт']].mean().reset_index()
+        df_grouped = df_filtered.groupby([df_filtered['Дата'], 'Название'])[numerical_cols].mean().reset_index()
         df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%d.%m')
+        df_grouped = df_grouped.sort_values('Дата')
 
     return df_grouped
 
 
 def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
     chart_data = df_grouped[df_grouped['Название'] == kpi_name]
+
+    if chart_data.empty:
+        # Возвращаем пустую фигуру с сообщением, если данных нет
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text="Нет данных для построения графика", showarrow=False)],
+            xaxis={'visible': False}, yaxis={'visible': False}, height=350, title=f"{title_prefix}: {kpi_name}"
+        )
+        return fig
 
     fig = go.Figure()
     fig.add_trace(
@@ -150,7 +178,6 @@ if menu == "Сводный Дашборд":
     selected_month_str = None
     if period_type == "Месяц (по дням)":
         with col_per2:
-            # Получаем список доступных месяцев из данных
             df_dates = st.session_state.kpi_history.copy()
             df_dates['Дата'] = pd.to_datetime(df_dates['Дата'])
             df_dates['Month_Str'] = df_dates['Дата'].dt.to_period('M').astype(str)
@@ -168,14 +195,14 @@ if menu == "Сводный Дашборд":
     df_viz = filter_data_by_period(df_source, period_type, selected_month_str)
 
     if df_viz.empty:
-        st.warning("Нет данных за выбранный период.")
+        st.warning("Нет данных для отображения за выбранный период. Проверьте вкладку 'История (Редактор)'.")
     else:
         # -- Графики --
         st.subheader("Ключевые показатели (Финансы и Программы)")
         c1, c2 = st.columns(2)
 
-        # Пример KPI для отображения (берем из наличия в данных)
-        kpi_finance = "Сумма сбора SMM, руб. [KPI.ФР.1]"  # Или другой финансовый
+        # Используем КПЭ, которые точно есть в mock-данных
+        kpi_finance = "Сумма сбора SMM, руб. [KPI.ФР.1]"
         kpi_program = "Заполняемость центров (Верь в себя), %"
 
         with c1:
@@ -212,31 +239,21 @@ elif menu == "SMM Эффективность":
     tabs = st.tabs(["ER (Engagement Rate)", "Share Rate", "CTR"])
 
     with tabs[0]:
-        if not df_smm_viz[df_smm_viz['Название'].str.contains("ER")].empty:
-            st.plotly_chart(render_chart(df_smm_viz, "ER (Engagement Rate), % [KPI.СММ.1]"), use_container_width=True)
-        else:
-            st.info("Нет данных по ER за этот период")
+        st.plotly_chart(render_chart(df_smm_viz, "ER (Engagement Rate), % [KPI.СММ.1]"), use_container_width=True)
 
     with tabs[1]:
-        # Для примера, если данных нет, график будет пустой, обработаем это
-        if not df_smm_viz[df_smm_viz['Название'].str.contains("Share")].empty:
-            st.plotly_chart(render_chart(df_smm_viz, "Share Rate (Репосты), %"), use_container_width=True)
-        else:
-            st.info("Нет данных по репостам")
+        st.plotly_chart(render_chart(df_smm_viz, "Share Rate (Репосты), %"), use_container_width=True)
+
+    with tabs[2]:
+        st.plotly_chart(render_chart(df_smm_viz, "CTR (Клики на сайт), %"), use_container_width=True)
 
     # 3.2 Фандрайзинг
     st.subheader("3.2 SMM Фандрайзинг")
     c_fund1, c_fund2 = st.columns(2)
     with c_fund1:
-        if not df_smm_viz[df_smm_viz['Название'].str.contains("DCR")].empty:
-            st.plotly_chart(render_chart(df_smm_viz, "DCR (Конверсия в донат), %"), use_container_width=True)
-        else:
-            st.info("Нет данных по DCR")
+        st.plotly_chart(render_chart(df_smm_viz, "DCR (Конверсия в донат), %"), use_container_width=True)
     with c_fund2:
-        if not df_smm_viz[df_smm_viz['Название'].str.contains("Сумма")].empty:
-            st.plotly_chart(render_chart(df_smm_viz, "Сумма сбора SMM, руб. [KPI.ФР.1]"), use_container_width=True)
-        else:
-            st.info("Нет данных по суммам сбора")
+        st.plotly_chart(render_chart(df_smm_viz, "Сумма сбора SMM, руб. [KPI.ФР.1]"), use_container_width=True)
 
 
 # --- 3. ВВОД ДАННЫХ KPI ---
@@ -248,13 +265,10 @@ elif menu == "Ввод данных KPI":
         col_cat, col_kpi = st.columns(2)
 
         with col_cat:
-            # Выбор категории
             category = st.selectbox("1. Категория", list(KPI_STRUCTURE.keys()))
 
         with col_kpi:
-            # Выбор KPI зависимый от категории
             available_kpis = KPI_STRUCTURE[category]
-            # Формируем список для selectbox: Ключ -> Значение
             kpi_display = {k: v for k, v in available_kpis.items()}
             selected_kpi_key = st.selectbox(
                 "2. Показатель",
@@ -269,11 +283,11 @@ elif menu == "Ввод данных KPI":
         with c_date:
             input_date = st.date_input("Дата отчета", datetime.now())
         with c_min:
-            val_min = st.number_input("Минимум (Красная зона)", value=0.0, step=0.1)
+            val_min = st.number_input("Минимум (Красная зона)", value=0.0, step=0.01)
         with c_target:
-            val_target = st.number_input("Цель (План)", value=0.0, step=0.1)
+            val_target = st.number_input("Цель (План)", value=0.0, step=0.01)
         with c_fact:
-            val_fact = st.number_input("Факт", value=0.0, step=0.1)
+            val_fact = st.number_input("Факт", value=0.0, step=0.01)
 
         comment = st.text_area("Комментарий / Причина отклонения")
 
@@ -290,7 +304,6 @@ elif menu == "Ввод данных KPI":
                 "Факт": val_fact,
                 "Комментарий": comment
             }
-            # Добавление в session_state
             st.session_state.kpi_history = pd.concat(
                 [st.session_state.kpi_history, pd.DataFrame([new_row])],
                 ignore_index=True
@@ -302,35 +315,31 @@ elif menu == "История (Редактор)":
     st.title("🗄️ Управление данными (CRUD)")
     st.info("""
     **Инструкция:**
-    * Редактируйте ячейки двойным кликом.
-    * Выделите строки и нажмите Delete для удаления.
+    * Для **редактирования**: кликните дважды по ячейке, измените значение и нажмите Enter.
+    * Для **удаления**: выделите строки (галочкой слева) и нажмите клавишу `Delete`.
     * Изменения сохраняются автоматически.
     """)
 
     if not st.session_state.kpi_history.empty:
+
+        def save_changes():
+            # Функция обратного вызова (Callback) для сохранения изменений
+            changes = st.session_state["editor"]
+            # ПРИНУДИТЕЛЬНОЕ ПРЕОБРАЗОВАНИЕ ДАТЫ ПРИ СОХРАНЕНИИ
+            changes['Дата'] = pd.to_datetime(changes['Дата'], errors='coerce').dt.date
+            st.session_state.kpi_history = changes
+
+
         # Конфигурация колонок
         column_config = {
             "Дата": st.column_config.DateColumn("Дата", format="DD.MM.YYYY", required=True),
             "Категория": st.column_config.SelectboxColumn("Категория", options=list(KPI_STRUCTURE.keys()),
                                                           required=True),
-            # Настройка числовых полей с шагом 0.01, чтобы избежать ошибок округления
             "Минимум": st.column_config.NumberColumn("Мин", format="%.2f", step=0.01),
             "Цель": st.column_config.NumberColumn("План", format="%.2f", step=0.01),
             "Факт": st.column_config.NumberColumn("Факт", format="%.2f", step=0.01),
             "Комментарий": st.column_config.TextColumn("Комментарий", width="large")
         }
-
-
-        # --- ВАЖНОЕ ИСПРАВЛЕНИЕ ---
-        # Функция обратного вызова (Callback) для сохранения изменений
-        def save_changes():
-            # Мы берем измененные данные из состояния виджета 'editor' и сохраняем в основную базу
-            # Это предотвращает бесконечный цикл перезагрузки
-            changes = st.session_state["editor"]
-            # Приводим даты к правильному формату, если они сбились при редактировании
-            changes['Дата'] = pd.to_datetime(changes['Дата'])
-            st.session_state.kpi_history = changes
-
 
         # Сам редактор
         st.data_editor(
@@ -338,8 +347,8 @@ elif menu == "История (Редактор)":
             column_config=column_config,
             num_rows="dynamic",
             use_container_width=True,
-            key="editor",  # Ключ виджета
-            on_change=save_changes  # Запуск функции сохранения ТОЛЬКО при реальном изменении
+            key="editor",
+            on_change=save_changes
         )
 
     else:
