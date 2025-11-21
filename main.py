@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.7", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.8", layout="wide")
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -99,12 +99,11 @@ def generate_mock_data():
         current_date += timedelta(days=7)
 
     df = pd.DataFrame(data)
-    # Гарантируем, что даты - это Python date объекты
     df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала']).dt.date
     return df
 
 
-# --- ФУНКЦИЯ ПРИНУДИТЕЛЬНОЙ ОЧИСТКИ ДАННЫХ (НОВАЯ) ---
+# --- ФУНКЦИЯ ПРИНУДИТЕЛЬНОЙ ОЧИСТКИ ДАННЫХ ---
 def clean_data_types(df):
     """Обеспечивает корректность типов данных в ключевых колонках."""
     if df.empty:
@@ -135,24 +134,32 @@ else:
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 def filter_data_by_period(df, period_type, selected_month_str=None):
-    """Фильтрует и группирует данные, используя надежную DT-колонку."""
+    """Фильтрует и группирует данные: по месяцам (для Года) или по неделям (для Месяца)."""
     df = df.copy()
 
     # 1. Создание надежной Pandas Datetime колонки для манипуляций
     df['Дата_Начала_DT'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
 
-    # Отбрасываем любые строки, где дата или числовые значения отсутствуют (NaN)
     df = df.dropna(subset=['Дата_Начала_DT'] + numerical_cols)
     if df.empty:
         return pd.DataFrame()
 
     # 2. Фильтрация и группировка
     if period_type == "Год (по месяцам)":
-        df_grouped = df.groupby([df['Дата_Начала_DT'].dt.to_period('M'), 'Название'])[
-            numerical_cols].mean().reset_index()
-        df_grouped['Период'] = df_grouped['Дата_Начала_DT'].dt.strftime('%B %Y')
-        df_grouped = df_grouped.sort_values('Дата_Начала_DT')
+
+        # --- КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ v2.8: ЯВНАЯ АГРЕГАЦИЯ И СОРТИРОВКА ---
+        df['Месяц_Период'] = df['Дата_Начала_DT'].dt.to_period('M')
+
+        # Группируем по Period-объекту и Названию KPI
+        df_grouped = df.groupby(['Месяц_Период', 'Название'])[numerical_cols].mean().reset_index()
+
+        # Создаем строковый ключ для сортировки (YYYY-MM)
+        df_grouped['Period_Sort_Key'] = df_grouped['Месяц_Период'].astype(str)
+        # Создаем метку для оси X (Месяц Год)
+        df_grouped['Период'] = df_grouped['Месяц_Период'].dt.strftime('%B %Y')
+
+        df_grouped = df_grouped.sort_values('Period_Sort_Key')
 
     else:  # Месяц (по неделям)
         if selected_month_str is None:
@@ -160,7 +167,6 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
 
         y, m = map(int, selected_month_str.split('-'))
 
-        # Фильтрация по году и месяцу надежной DT-колонки
         df_filtered = df[(df['Дата_Начала_DT'].dt.year == y) & (df['Дата_Начала_DT'].dt.month == m)].copy()
 
         if df_filtered.empty:
@@ -171,7 +177,8 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
         df_grouped = df_grouped.sort_values('Неделя_Год')
         df_grouped['Период'] = df_grouped['Промежуток_Дат']
 
-    return df_grouped
+    # Возвращаем только необходимые для графика колонки
+    return df_grouped[['Название', 'Минимум', 'Цель', 'Факт', 'Период']]
 
 
 def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
@@ -399,10 +406,8 @@ elif menu == "История (Редактор)":
             changes = st.session_state["editor"]
 
             # --- Защита типов ---
-            # Приведение даты обратно в тип date
             changes['Дата_Начала'] = pd.to_datetime(changes['Дата_Начала'], errors='coerce').dt.date
 
-            # Приведение числовых колонок к float
             numerical_cols = ['Минимум', 'Цель', 'Факт']
             for col in numerical_cols:
                 changes[col] = pd.to_numeric(changes[col], errors='coerce')
@@ -412,7 +417,7 @@ elif menu == "История (Редактор)":
 
         # Конфигурация колонок
         column_config = {
-            # Нередактируемые, но видимые служебные поля (KPI_ID нужен для полной структуры)
+            # Нередактируемые, но видимые служебные поля
             "KPI_ID": st.column_config.TextColumn("KPI ID", disabled=True),
             "Дата_Начала": st.column_config.DateColumn("Дата начала", format="DD.MM.YYYY", disabled=True),
             "Неделя_Год": st.column_config.TextColumn("Неделя (ГГГГ-WW)", disabled=True),
