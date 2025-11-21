@@ -5,9 +5,9 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.2", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.3", layout="wide")
 
-# Полная структура KPI на основе документа [Разделы I и II]
+# Полная структура KPI
 KPI_STRUCTURE = {
     "SMM (Вовлеченность)": {
         "SMM.ER": "ER (Engagement Rate), % [KPI.СММ.1]",
@@ -38,14 +38,26 @@ KPI_STRUCTURE = {
 }
 
 
-# --- ГЕНЕРАЦИЯ ТЕСТОВЫХ ДАННЫХ ---
+# --- ФУНКЦИЯ ДЛЯ РАСЧЕТА НЕДЕЛИ ---
+def get_week_info(d: date):
+    """Возвращает ID недели (YYYY-WXX) и диапазон дат (DD.MM.YYYY - DD.MM.YYYY)."""
+    # d.weekday() возвращает 0 для Понедельника
+    start_of_week = d - timedelta(days=d.weekday())
+    end_of_week = start_of_week + timedelta(days=6)
+
+    # Используем ISO формат YYYY-WW для сортировки
+    week_year_id = start_of_week.strftime('%Y-W%W')
+
+    date_range = f"{start_of_week.strftime('%d.%m.%Y')} - {end_of_week.strftime('%d.%m.%Y')}"
+    return start_of_week, week_year_id, date_range
+
+
+# --- ГЕНЕРАЦИЯ ТЕСТОВЫХ ДАННЫХ (Теперь по неделям) ---
 def generate_mock_data():
     data = []
     end_date = datetime.now()
     start_date = datetime(end_date.year, 1, 1)
-    days_range = (end_date - start_date).days
 
-    # Расширенный список для мок-данных, чтобы все графики работали сразу
     categories_map = {
         "SMM.MONEY": ("SMM (Фандрайзинг)", "Сумма сбора SMM, руб. (Часть KPI.ФР.1)", 40000, 60000),
         "SMM.ER": ("SMM (Вовлеченность)", "ER (Engagement Rate), % [KPI.СММ.1]", 2.5, 4.0),
@@ -56,31 +68,39 @@ def generate_mock_data():
         "KPI.ФР.1_ОБЩИЙ": ("Финансы", "Выполнение общего плана фандрайзинга, %", 80, 100),
     }
 
-    for i in range(days_range + 1):
-        current_date = start_date + timedelta(days=i)
+    # Генерируем данные для каждой недели с начала года
+    current_date = start_date
+    while current_date <= end_date:
+        # Проверяем, что это начало недели (Понедельник) или первая итерация
+        if current_date.weekday() == 0 or current_date == start_date:
+            start_of_week, week_id, date_range_str = get_week_info(current_date.date())
 
-        for kpi_id, (cat, name, min_val, target_val) in categories_map.items():
-            if np.random.random() > 0.7:
+            for kpi_id, (cat, name, min_val, target_val) in categories_map.items():
+                if np.random.random() > 0.1:  # 90% вероятность записи за неделю
 
-                if kpi_id == "KPI.ФИН.1":
-                    fact_val = abs(np.random.normal(2, 2))
-                elif 'MONEY' in kpi_id:
-                    fact_val = np.random.randint(min_val * 0.8, target_val * 1.2)
-                else:
-                    fact_val = np.random.normal(target_val, target_val * 0.15)
+                    if kpi_id == "KPI.ФИН.1":
+                        fact_val = abs(np.random.normal(2, 2))
+                    elif 'MONEY' in kpi_id:
+                        fact_val = np.random.randint(min_val * 0.8, target_val * 1.2)
+                    else:
+                        fact_val = np.random.normal(target_val, target_val * 0.15)
 
-                fact_val = max(0, fact_val)
+                    fact_val = max(0, fact_val)
 
-                data.append({
-                    "Дата": current_date.date(),
-                    "Категория": cat,
-                    "KPI_ID": kpi_id,
-                    "Название": name,
-                    "Минимум": min_val,
-                    "Цель": target_val,
-                    "Факт": round(fact_val, 2),
-                    "Комментарий": ""
-                })
+                    data.append({
+                        "Дата_Начала": start_of_week,  # Дата Понедельника для фильтрации по месяцам
+                        "Неделя_Год": week_id,
+                        "Промежуток_Дат": date_range_str,
+                        "Категория": cat,
+                        "KPI_ID": kpi_id,
+                        "Название": name,
+                        "Минимум": min_val,
+                        "Цель": target_val,
+                        "Факт": round(fact_val, 2),
+                        "Комментарий": ""
+                    })
+
+        current_date += timedelta(days=7)  # Переход к следующему понедельнику
 
     return pd.DataFrame(data)
 
@@ -90,27 +110,44 @@ if 'kpi_history' not in st.session_state:
     st.session_state.kpi_history = generate_mock_data()
 
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (без изменений) ---
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
 def filter_data_by_period(df, period_type, selected_month_str=None):
+    """Фильтрует и группирует данные: по месяцам (для Года) или по неделям (для Месяца)."""
     df = df.copy()
-    df['Дата'] = pd.to_datetime(df['Дата'], errors='coerce')
+
+    # 1. Защищенное преобразование типов
+    df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
     for col in numerical_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce')
-    df = df.dropna(subset=['Дата'] + numerical_cols)
+
+    df = df.dropna(subset=['Дата_Начала'] + numerical_cols)
     if df.empty:
         return pd.DataFrame()
 
+    # 2. Фильтрация и группировка
     if period_type == "Год (по месяцам)":
-        df_grouped = df.groupby([df['Дата'].dt.to_period('M'), 'Название'])[numerical_cols].mean().reset_index()
-        df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%B %Y')
-        df_grouped = df_grouped.sort_values('Дата')
-    else:
+        # Группировка по месяцам
+        df_grouped = df.groupby([df['Дата_Начала'].dt.to_period('M'), 'Название'])[numerical_cols].mean().reset_index()
+        df_grouped['Период'] = df_grouped['Дата_Начала'].dt.strftime('%B %Y')
+        # Сортировка по дате для правильной хронологии
+        df_grouped = df_grouped.sort_values('Дата_Начала')
+
+    else:  # Месяц (по неделям)
         y, m = map(int, selected_month_str.split('-'))
-        df_filtered = df[(df['Дата'].dt.year == y) & (df['Дата'].dt.month == m)].copy()
-        df_grouped = df_filtered.groupby([df_filtered['Дата'], 'Название'])[numerical_cols].mean().reset_index()
-        df_grouped['Период'] = df_grouped['Дата'].dt.strftime('%d.%m')
-        df_grouped = df_grouped.sort_values('Дата')
+
+        # Фильтруем все записи, где дата начала недели попадает в выбранный месяц
+        df_filtered = df[(df['Дата_Начала'].dt.year == y) & (df['Дата_Начала'].dt.month == m)].copy()
+
+        if df_filtered.empty:
+            return pd.DataFrame()
+
+        # Группировка по неделям
+        df_grouped = df_filtered.groupby(['Неделя_Год', 'Промежуток_Дат', 'Название'])[
+            numerical_cols].mean().reset_index()
+        df_grouped = df_grouped.sort_values('Неделя_Год')  # Сортировка по ID недели
+        df_grouped['Период'] = df_grouped['Промежуток_Дат']  # Используем диапазон дат как метку на оси
 
     return df_grouped
 
@@ -137,11 +174,15 @@ def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
 
     fig.update_layout(
         title=f"{title_prefix}: {kpi_name}",
-        xaxis_title="Период",
+        xaxis_title="Отчетный период",
         yaxis_title="Значение",
         margin=dict(l=20, r=20, t=40, b=20),
         height=350
     )
+    # Поворот меток для недель
+    if len(chart_data['Период'].unique()) > 6:
+        fig.update_xaxes(tickangle=45)
+
     return fig
 
 
@@ -150,21 +191,22 @@ def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
 st.sidebar.title("🕊️ Синяя Птица")
 menu = st.sidebar.radio("Навигация", ["Сводный Дашборд", "SMM Эффективность", "Ввод данных KPI", "История (Редактор)"])
 
-# --- 1. СВОДНЫЙ ДАШБОРД (без изменений) ---
+# --- 1. СВОДНЫЙ ДАШБОРД ---
 if menu == "Сводный Дашборд":
     st.title("📊 Сводный операционный дашборд")
 
     col_per1, col_per2 = st.columns([1, 2])
     with col_per1:
-        period_type = st.radio("Период отчета:", ["Год (по месяцам)", "Месяц (по дням)"], horizontal=True,
+        # ИЗМЕНЕНИЕ: В месяце теперь разбивка по неделям
+        period_type = st.radio("Период отчета:", ["Год (по месяцам)", "Месяц (по неделям)"], horizontal=True,
                                key="dashboard_period_radio")
 
     selected_month_str = None
-    if period_type == "Месяц (по дням)":
+    if period_type == "Месяц (по неделям)":
         with col_per2:
             df_dates = st.session_state.kpi_history.copy()
-            df_dates['Дата'] = pd.to_datetime(df_dates['Дата'])
-            df_dates['Month_Str'] = df_dates['Дата'].dt.to_period('M').astype(str)
+            df_dates['Дата_Начала'] = pd.to_datetime(df_dates['Дата_Начала'])
+            df_dates['Month_Str'] = df_dates['Дата_Начала'].dt.to_period('M').astype(str)
             available_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
 
             if not available_months:
@@ -191,21 +233,21 @@ if menu == "Сводный Дашборд":
         with c2:
             st.plotly_chart(render_chart(df_viz, kpi_program), use_container_width=True)
 
-# --- 2. SMM ЭФФЕКТИВНОСТЬ (без изменений) ---
+# --- 2. SMM ЭФФЕКТИВНОСТЬ ---
 elif menu == "SMM Эффективность":
     st.title("📱 SMM Эффективность")
 
     col_s1, col_s2 = st.columns([1, 2])
     with col_s1:
-        smm_period_type = st.radio("Масштаб:", ["Год (по месяцам)", "Месяц (по дням)"], horizontal=True,
+        smm_period_type = st.radio("Масштаб:", ["Год (по месяцам)", "Месяц (по неделям)"], horizontal=True,
                                    key="smm_radio")
 
     smm_month_str = None
-    if smm_period_type == "Месяц (по дням)":
+    if smm_period_type == "Месяц (по неделям)":
         with col_s2:
             df_dates = st.session_state.kpi_history.copy()
-            df_dates['Дата'] = pd.to_datetime(df_dates['Дата'])
-            df_dates['Month_Str'] = df_dates['Дата'].dt.to_period('M').astype(str)
+            df_dates['Дата_Начала'] = pd.to_datetime(df_dates['Дата_Начала'])
+            df_dates['Month_Str'] = df_dates['Дата_Начала'].dt.to_period('M').astype(str)
             smm_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
             smm_month_str = st.selectbox("Месяц:", smm_months, key="smm_select")
 
@@ -239,45 +281,48 @@ elif menu == "SMM Эффективность":
 # --- 3. ВВОД ДАННЫХ KPI ---
 elif menu == "Ввод данных KPI":
     st.title("📝 Ввод новых показателей")
-    st.markdown("Выберите категорию, затем показатель. Все поля обязательны.")
+    st.markdown("Выберите категорию и показатель. Все поля обязательны. Данные вносятся за неделю.")
 
-    # --- ИСПРАВЛЕННАЯ ЛОГИКА: Без st.form и callback, relying on natural rerun ---
-    col_cat, col_kpi = st.columns(2)
+    col_date, col_cat = st.columns(2)
+
+    with col_date:
+        # ИЗМЕНЕНИЕ: Ввод любой даты в отчетной неделе
+        input_date = st.date_input("1. Выберите любую дату в отчетной неделе", datetime.now().date(), key="input_date")
 
     with col_cat:
-        # Выбор категории. При изменении Streamlit перерисовывает страницу
+        # Выбор категории
         category = st.selectbox(
-            "1. Категория",
+            "2. Категория",
             list(KPI_STRUCTURE.keys()),
-            key="input_category_key"  # Ключ для сохранения выбора
+            key="input_category_key"
         )
 
-    # Получаем доступные KPI, используя текущий выбранный элемент (который Streamlit сохранил по ключу)
+    # Расчет недели и отображение
+    start_of_week, week_id, date_range = get_week_info(input_date)
+    st.info(f"Отчетный период: **{date_range}** ({week_id})")
+
     available_kpis = KPI_STRUCTURE.get(category, {})
 
-    with col_kpi:
-        if available_kpis:
-            kpi_display = {k: v for k, v in available_kpis.items()}
-            # Второй selectbox, который зависит от первого
-            selected_kpi_key = st.selectbox(
-                "2. Показатель",
-                list(kpi_display.keys()),
-                format_func=lambda x: kpi_display[x],
-                key="input_kpi_key"
-            )
-            kpi_name_full = kpi_display[selected_kpi_key]
-        else:
-            st.warning("Нет показателей для данной категории.")
-            selected_kpi_key = None
-            kpi_name_full = ""
+    if available_kpis:
+        kpi_display = {k: v for k, v in available_kpis.items()}
+
+        selected_kpi_key = st.selectbox(
+            "3. Показатель",
+            list(kpi_display.keys()),
+            format_func=lambda x: kpi_display[x],
+            key="input_kpi_key"
+        )
+        kpi_name_full = kpi_display[selected_kpi_key]
+    else:
+        st.warning("Нет показателей для данной категории.")
+        selected_kpi_key = None
+        kpi_name_full = ""
 
     st.divider()
 
     # Сбор остальных данных
     if selected_kpi_key:
-        c_date, c_min, c_target, c_fact = st.columns(4)
-        with c_date:
-            input_date = st.date_input("Дата отчета", datetime.now(), key="input_date")
+        c_min, c_target, c_fact = st.columns(3)
         with c_min:
             val_min = st.number_input("Минимум (Красная зона)", value=0.0, step=0.01, key="input_min")
         with c_target:
@@ -291,8 +336,14 @@ elif menu == "Ввод данных KPI":
         submitted = st.button("💾 Сохранить в базу")
 
         if submitted:
+            # Проверка на дублирование (опционально, но полезно)
+            # if (st.session_state.kpi_history['Неделя_Год'] == week_id) & (st.session_state.kpi_history['KPI_ID'] == selected_kpi_key).any():
+            #     st.error("Данный KPI за эту неделю уже внесен. Пожалуйста, отредактируйте запись в разделе 'История'.")
+            # else:
             new_row = {
-                "Дата": input_date,
+                "Дата_Начала": start_of_week,
+                "Неделя_Год": week_id,
+                "Промежуток_Дат": date_range,
                 "Категория": category,
                 "KPI_ID": selected_kpi_key,
                 "Название": kpi_name_full,
@@ -301,14 +352,12 @@ elif menu == "Ввод данных KPI":
                 "Факт": val_fact,
                 "Комментарий": comment
             }
-            # Добавление в session_state
+
             st.session_state.kpi_history = pd.concat(
                 [st.session_state.kpi_history, pd.DataFrame([new_row])],
                 ignore_index=True
             )
-            st.success(f"Показатель '{kpi_name_full}' успешно добавлен!")
-            # Принудительная очистка полей формы после успешной отправки (опционально)
-            # st.experimental_rerun()
+            st.success(f"Показатель '{kpi_name_full}' за {date_range} успешно добавлен!")
     else:
         st.warning("Выберите действительный KPI, чтобы ввести данные.")
 
@@ -327,23 +376,30 @@ elif menu == "История (Редактор)":
 
         def save_changes():
             changes = st.session_state["editor"]
-            # Приведение даты к правильному формату
-            changes['Дата'] = pd.to_datetime(changes['Дата'], errors='coerce').dt.date
+            # Здесь мы не пересчитываем даты, так как это сложный процесс, просто сохраняем данные
             st.session_state.kpi_history = changes
 
 
+        # ИЗМЕНЕНИЕ: Конфигурация колонок для недельной отчетности
         column_config = {
-            "Дата": st.column_config.DateColumn("Дата", format="DD.MM.YYYY", required=True),
+            "Дата_Начала": st.column_config.DateColumn("Дата начала", format="DD.MM.YYYY", disabled=True),
+            "Неделя_Год": st.column_config.TextColumn("Неделя (ГГГГ-WW)", disabled=True),
+            "Промежуток_Дат": st.column_config.TextColumn("Отчетный период", disabled=True),
             "Категория": st.column_config.SelectboxColumn("Категория", options=list(KPI_STRUCTURE.keys()),
                                                           required=True),
+            "Название": st.column_config.TextColumn("KPI"),
+            # Оставим как TextColumn, чтобы не ломать при редактировании
             "Минимум": st.column_config.NumberColumn("Мин", format="%.2f", step=0.01),
             "Цель": st.column_config.NumberColumn("План", format="%.2f", step=0.01),
             "Факт": st.column_config.NumberColumn("Факт", format="%.2f", step=0.01),
             "Комментарий": st.column_config.TextColumn("Комментарий", width="large")
         }
 
+        # Скрываем неинформативные колонки для чистоты
+        df_display = st.session_state.kpi_history.drop(columns=['KPI_ID'])
+
         st.data_editor(
-            st.session_state.kpi_history.sort_values("Дата", ascending=False),
+            df_display.sort_values("Дата_Начала", ascending=False),
             column_config=column_config,
             num_rows="dynamic",
             use_container_width=True,
