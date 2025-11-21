@@ -6,7 +6,7 @@ import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
 # Обновленная версия
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.13", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.14 (ФИНАЛЬНЫЙ ФИКС)", layout="wide")
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -422,9 +422,11 @@ elif menu == "История (Редактор)":
         def save_changes():
             changes = st.session_state["editor"]
 
-            # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ V2.13: Проверка на пустую таблицу ---
-            if changes.empty:
-                # Если таблица пуста (все строки удалены), сохраняем пустую, но структурированную DF
+            # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ V2.14: Защита от не-DataFrame объектов после удаления ---
+            # Проверяем, является ли объект DataFrame и не пуст ли он
+            if not isinstance(changes, pd.DataFrame) or changes.empty:
+                # Если таблица пуста (все строки удалены или объект не DataFrame),
+                # сохраняем пустую DF, чтобы избежать KeyError/AttributeError
                 st.session_state.kpi_history = pd.DataFrame(columns=st.session_state.kpi_history.columns)
                 return
 
