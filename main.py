@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 import numpy as np
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.4", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.5", layout="wide")
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -85,7 +85,6 @@ def generate_mock_data():
 
                     fact_val = max(0, fact_val)
 
-                    # Определяем категорию из KPI_STRUCTURE
                     category = next((cat_name for cat_name, kpis in KPI_STRUCTURE.items() if kpi_id in kpis), "Прочее")
 
                     data.append({
@@ -103,7 +102,13 @@ def generate_mock_data():
 
         current_date += timedelta(days=7)
 
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    # Гарантия правильных типов после мок-генерации
+    df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала']).dt.date
+    df['Минимум'] = pd.to_numeric(df['Минимум'], errors='coerce')
+    df['Цель'] = pd.to_numeric(df['Цель'], errors='coerce')
+    df['Факт'] = pd.to_numeric(df['Факт'], errors='coerce')
+    return df
 
 
 # Инициализация Session State
@@ -129,7 +134,6 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
 
     # 2. Фильтрация и группировка
     if period_type == "Год (по месяцам)":
-        # Группировка по месяцам
         df_grouped = df.groupby([df['Дата_Начала'].dt.to_period('M'), 'Название'])[numerical_cols].mean().reset_index()
         df_grouped['Период'] = df_grouped['Дата_Начала'].dt.strftime('%B %Y')
         df_grouped = df_grouped.sort_values('Дата_Начала')
@@ -149,8 +153,8 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
         # Группировка по неделям
         df_grouped = df_filtered.groupby(['Неделя_Год', 'Промежуток_Дат', 'Название'])[
             numerical_cols].mean().reset_index()
-        df_grouped = df_grouped.sort_values('Неделя_Год')  # Сортировка по ID недели
-        df_grouped['Период'] = df_grouped['Промежуток_Дат']  # Используем диапазон дат как метку на оси
+        df_grouped = df_grouped.sort_values('Неделя_Год')
+        df_grouped['Период'] = df_grouped['Промежуток_Дат']
 
     return df_grouped
 
@@ -213,7 +217,6 @@ if menu == "Сводный Дашборд":
             if not available_months:
                 available_months = [datetime.now().strftime('%Y-%m')]
 
-            # По умолчанию выбираем самый последний месяц
             default_index = 0 if available_months else 0
             selected_month_str = st.selectbox("Выберите месяц:", available_months, index=default_index,
                                               key="dashboard_month_select")
@@ -370,19 +373,30 @@ elif menu == "История (Редактор)":
     * Изменения сохраняются автоматически.
     """)
 
-    if not st.session_state.kpi_history.empty:
+    if st.session_state.kpi_history.empty:
+        st.warning("База данных пуста.")
+
+    else:
 
         def save_changes():
             changes = st.session_state["editor"]
-            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Преобразование даты обратно в тип date
+
+            # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантия типов ---
+            # 1. Приведение даты обратно в тип date
             changes['Дата_Начала'] = pd.to_datetime(changes['Дата_Начала'], errors='coerce').dt.date
-            # Сохранение полного набора данных, включая скрытые колонки
+
+            # 2. Приведение числовых колонок к float (защита от строковых вводов)
+            numerical_cols = ['Минимум', 'Цель', 'Факт']
+            for col in numerical_cols:
+                changes[col] = pd.to_numeric(changes[col], errors='coerce')
+
+            # Сохранение полного набора данных
             st.session_state.kpi_history = changes
 
 
-        # Конфигурация колонок: передаем все колонки и управляем их видимостью/редактированием
+        # Конфигурация колонок
         column_config = {
-            # СКРЫТЫЕ СЛУЖЕБНЫЕ ПОЛЯ (KPI_ID нужен для полной структуры)
+            # СКРЫТЫЕ СЛУЖЕБНЫЕ ПОЛЯ
             "KPI_ID": st.column_config.Column(visible=False, disabled=True),
 
             # ЗАБЛОКИРОВАННЫЕ, НО ВИДИМЫЕ ПОЛЯ
@@ -400,7 +414,7 @@ elif menu == "История (Редактор)":
             "Комментарий": st.column_config.TextColumn("Комментарий", width="large")
         }
 
-        # Передаем ПОЛНЫЙ DataFrame из session_state
+        # Передаем ПОЛНЫЙ DataFrame
         st.data_editor(
             st.session_state.kpi_history.sort_values("Дата_Начала", ascending=False),
             column_config=column_config,
@@ -410,8 +424,5 @@ elif menu == "История (Редактор)":
             on_change=save_changes
         )
 
-    else:
-        st.warning("База данных пуста.")
-
-    csv = st.session_state.kpi_history.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Скачать бэкап (CSV)", csv, "kpi_full_backup.csv", "text/csv")
+        csv = st.session_state.kpi_history.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Скачать бэкап (CSV)", csv, "kpi_full_backup.csv", "text/csv")
