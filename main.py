@@ -141,9 +141,15 @@ def clean_data_types(df):
     df = df.reset_index(drop=True)
 
     # Убедимся, что все нужные колонки присутствуют (добавим отсутствующие с NaN/пустотой)
-    for c in REQUIRED_COLUMNS + ['Дата_Начала_DT', 'Период']:
+    for c in REQUIRED_COLUMNS:
         if c not in df.columns:
             df[c] = pd.NA
+    
+    # Добавим вспомогательные колонки только если они отсутствуют
+    if 'Дата_Начала_DT' not in df.columns:
+        df['Дата_Начала_DT'] = pd.NA
+    if 'Период' not in df.columns:
+        df['Период'] = pd.NA
 
     return df
 
@@ -448,12 +454,34 @@ elif menu == "История (Редактор)":
 
         def save_changes():
             changes = st.session_state.get("editor", None)
-            # защита: если Streamlit вернул не DataFrame — ничего не делаем
-            if not isinstance(changes, pd.DataFrame):
+            
+            # Проверяем, что изменения действительно являются DataFrame
+            # или имеют атрибут 'data' (новые версии Streamlit могут использовать другой формат)
+            if hasattr(changes, 'data'):
+                # Если изменения в формате с атрибутом 'data' (например, DeltaGenerator)
+                df_changes = pd.DataFrame(changes.data)
+            elif isinstance(changes, dict):
+                # Если изменения в формате словаря (например, при удалении строк)
+                # преобразуем их обратно в DataFrame
+                if 'deleted_rows' in changes and len(changes.get('deleted_rows', [])) > 0:
+                    # Обработка удаления строк
+                    deleted_indices = changes.get('deleted_rows', [])
+                    df_current = st.session_state.kpi_history.copy()
+                    df_updated = df_current.drop(index=deleted_indices).reset_index(drop=True)
+                    df_updated = clean_data_types(df_updated)
+                    st.session_state.kpi_history = df_updated
+                    st.success(f"Удалено {len(deleted_indices)} строк(и). Изменения сохранены.")
+                    return
+                else:
+                    # В других случаях преобразуем в DataFrame
+                    df_changes = pd.DataFrame(changes)
+            elif isinstance(changes, pd.DataFrame):
+                df_changes = changes
+            else:
                 st.warning("Обновление не сохранено: неожиданный формат данных от редактора.")
                 return
 
-            cleaned = clean_data_types(changes)
+            cleaned = clean_data_types(df_changes)
 
             # Если cleaned пустой (пользователь удалил всё или данные стали некорректными),
             # не затираем базу автоматически — оставим предыдущую версию и уведомим.
