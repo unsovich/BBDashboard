@@ -3,10 +3,14 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, date
 import numpy as np
+import pickle
+import os
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
-# Обновленная версия
-st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.16 (ФИНАЛЬНАЯ СТАБИЛИЗАЦИЯ)", layout="wide")
+st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.17 (ИСПРАВЛЕНА ПОТЕРЯ ДАННЫХ)", layout="wide")
+
+# Файл для автосохранения
+BACKUP_FILE = "kpi_backup.pkl"
 
 # Полная структура KPI
 KPI_STRUCTURE = {
@@ -110,50 +114,84 @@ def generate_mock_data():
     return df
 
 
-# --- ФУНКЦИЯ ПРИНУДИТЕЛЬНОЙ ОЧИСТКИ ДАННЫХ ---
+# --- ИСПРАВЛЕННАЯ ФУНКЦИЯ ОЧИСТКИ ДАННЫХ ---
 def clean_data_types(df):
-    """Обеспечивает корректность типов данных и удаляет только критически некорректные строки.
-    Не удаляем строки при отсутствии одного из числовых полей — это было причиной потери всей БД.
+    """Обеспечивает корректность типов данных БЕЗ удаления строк.
+    Только валидация и приведение типов, без dropna().
     """
     if not isinstance(df, pd.DataFrame):
         return pd.DataFrame(columns=REQUIRED_COLUMNS)
 
-    # Если вход пуст — возвращаем корректно структурированную пустую DF
     if df.empty:
         return pd.DataFrame(columns=REQUIRED_COLUMNS)
 
-    # Приведение даты к Python date object (если есть колонка)
+    # Создаем копию для безопасности
+    df = df.copy()
+
+    # Приведение даты к Python date object
     if 'Дата_Начала' in df.columns:
         df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce').dt.date
     else:
-        return pd.DataFrame(columns=REQUIRED_COLUMNS)
+        df['Дата_Начала'] = None
 
-    # Приведение числовых колонок к float, но не удаляем строки из-за NaN в них
+    # Приведение числовых колонок к float (но НЕ удаляем строки с NaN)
     numerical_cols = ['Минимум', 'Цель', 'Факт']
     for col in numerical_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
+        else:
+            df[col] = np.nan
 
-    # Удаляем только строки, где отсутствует KPI_ID или Название — эти поля критичны.
-    df = df.dropna(subset=['KPI_ID', 'Название'])
+    # Заполняем отсутствующие обязательные текстовые поля пустыми строками
+    text_cols = ['KPI_ID', 'Название', 'Категория', 'Комментарий', 'Неделя_Год', 'Промежуток_Дат']
+    for col in text_cols:
+        if col not in df.columns:
+            df[col] = ""
+        else:
+            df[col] = df[col].fillna("")
 
-    # Сбрасываем индекс (чтобы избежать проблем с неправильными индексами после редактирования)
+    # Сбрасываем индекс
     df = df.reset_index(drop=True)
-
-    # Убедимся, что все нужные колонки присутствуют (добавим отсутствующие с NaN/пустотой)
-    for c in REQUIRED_COLUMNS + ['Дата_Начала_DT', 'Период']:
-        if c not in df.columns:
-            df[c] = pd.NA
 
     return df
 
 
+# --- ФУНКЦИЯ СОХРАНЕНИЯ В ФАЙЛ ---
+def save_to_file(df):
+    """Сохраняет DataFrame в файл бэкапа"""
+    try:
+        with open(BACKUP_FILE, 'wb') as f:
+            pickle.dump(df, f)
+    except Exception as e:
+        st.error(f"Ошибка сохранения бэкапа: {e}")
 
-# Инициализация Session State
+
+# --- ФУНКЦИЯ ЗАГРУЗКИ ИЗ ФАЙЛА ---
+def load_from_file():
+    """Загружает DataFrame из файла бэкапа"""
+    try:
+        if os.path.exists(BACKUP_FILE):
+            with open(BACKUP_FILE, 'rb') as f:
+                return pickle.load(f)
+    except Exception as e:
+        st.warning(f"Не удалось загрузить бэкап: {e}")
+    return None
+
+
+# --- ИСПРАВЛЕННАЯ ИНИЦИАЛИЗАЦИЯ SESSION STATE ---
 if 'kpi_history' not in st.session_state:
-    st.session_state.kpi_history = generate_mock_data()
-else:
-    st.session_state.kpi_history = clean_data_types(st.session_state.kpi_history)
+    # Пытаемся загрузить из файла
+    loaded_data = load_from_file()
+    if loaded_data is not None and not loaded_data.empty:
+        st.session_state.kpi_history = loaded_data
+    else:
+        st.session_state.kpi_history = generate_mock_data()
+        save_to_file(st.session_state.kpi_history)
+    st.session_state.data_initialized = True
+
+
+# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Убрана автоматическая очистка при каждом обновлении страницы
+# Данные НЕ очищаются при каждом рендере
 
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
@@ -162,19 +200,17 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
     """Фильтрует и группирует данные: по месяцам (для Года) или по неделям (для Месяца)."""
     df = df.copy()
 
-    # Если данные уже очищены функцией clean_data_types, они должны быть в формате Python date objects.
-    # Преобразование в datetime64[ns] для Pandas-агрегации.
+    # Преобразование в datetime64[ns] для Pandas-агрегации
     df['Дата_Начала_DT'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
 
-    # КРИТИЧЕСКИЙ ФИЛЬТР: Отбрасываем строки, где нет даты или числа
+    # Отбрасываем строки, где нет даты или названия
     df = df.dropna(subset=['Дата_Начала_DT', 'Название'])
     if df.empty:
         return pd.DataFrame()
 
-    # 2. Фильтрация и группировка
+    # Фильтрация и группировка
     if period_type == "Год (по месяцам)":
-
         # Ключ для группировки и сортировки (YYYY-MM)
         df['Period_Key'] = df['Дата_Начала_DT'].dt.strftime('%Y-%m')
 
@@ -186,8 +222,7 @@ def filter_data_by_period(df, period_type, selected_month_str=None):
 
         # Сортируем по надежному строковому ключу
         df_grouped = df_grouped.sort_values('Period_Key')
-        df_grouped['Период'] = df_grouped['Период_Display']  # Финальная колонка метки
-
+        df_grouped['Период'] = df_grouped['Период_Display']
 
     else:  # Месяц (по неделям)
         if selected_month_str is None:
@@ -252,8 +287,15 @@ st.sidebar.title("🕊️ Синяя Птица")
 if st.sidebar.button("🚨 СБРОСИТЬ ВСЕ ДАННЫЕ (РЕМОНТ)"):
     # Clear corrupted data and regenerate mock data
     st.session_state.kpi_history = generate_mock_data()
+    save_to_file(st.session_state.kpi_history)
     st.rerun()
-    st.success("Данные полностью сброшены и заменены тестовыми. Графики должны работать.")
+
+# --- ИНФОРМАЦИЯ О СОХРАНЕНИИ ---
+if os.path.exists(BACKUP_FILE):
+    file_time = datetime.fromtimestamp(os.path.getmtime(BACKUP_FILE))
+    st.sidebar.info(f"💾 Последнее сохранение:\n{file_time.strftime('%d.%m.%Y %H:%M:%S')}")
+
+st.sidebar.markdown(f"**Записей в базе:** {len(st.session_state.kpi_history)}")
 
 # --- МЕНЮ ---
 menu = st.sidebar.radio("Навигация", ["Сводный Дашборд", "SMM Эффективность", "Ввод данных KPI", "История (Редактор)"])
@@ -418,15 +460,17 @@ elif menu == "Ввод данных KPI":
             }
 
             # Добавляем новую строку
+            new_df = pd.DataFrame([new_row])
             st.session_state.kpi_history = pd.concat(
-                [st.session_state.kpi_history, pd.DataFrame([new_row])],
+                [st.session_state.kpi_history, new_df],
                 ignore_index=True
             )
 
-            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ V2.16.1: Очистка типов сразу после добавления (для исправления пустых графиков)
-            st.session_state.kpi_history = clean_data_types(st.session_state.kpi_history)
+            # Сохраняем в файл
+            save_to_file(st.session_state.kpi_history)
 
-            st.success(f"Показатель '{kpi_name_full}' за {date_range} успешно добавлен!")
+            st.success(f"✅ Показатель '{kpi_name_full}' за {date_range} успешно добавлен!")
+            st.rerun()
     else:
         st.warning("Выберите действительный KPI, чтобы ввести данные.")
 
@@ -447,24 +491,34 @@ elif menu == "История (Редактор)":
     else:
 
         def save_changes():
+            """Безопасное сохранение изменений из редактора"""
             changes = st.session_state.get("editor", None)
-            # защита: если Streamlit вернул не DataFrame — ничего не делаем
+
             if not isinstance(changes, pd.DataFrame):
                 st.warning("Обновление не сохранено: неожиданный формат данных от редактора.")
                 return
 
+            # Применяем очистку типов к изменённым данным
             cleaned = clean_data_types(changes)
 
-            # Если cleaned пустой (пользователь удалил всё или данные стали некорректными),
-            # не затираем базу автоматически — оставим предыдущую версию и уведомим.
-            if cleaned.empty:
-                st.warning(
-                    "После изменений данные стали пустыми — сохранение отменено. Проверьте поля KPI_ID/Название и числовые колонки.")
+            # Проверяем, что критические данные не потерялись
+            if cleaned.empty and not changes.empty:
+                st.error("Ошибка сохранения: данные стали пустыми после обработки. Откатываем изменения.")
+                return
+
+            # Проверяем, что основные столбцы присутствуют
+            required_for_save = ['KPI_ID', 'Название', 'Дата_Начала']
+            if not all(col in cleaned.columns for col in required_for_save):
+                st.error("Ошибка: отсутствуют обязательные столбцы. Сохранение отменено.")
                 return
 
             # Только если всё в порядке — сохраняем
             st.session_state.kpi_history = cleaned
-            st.success("Изменения сохранены.")
+
+            # Сохраняем в файл
+            save_to_file(st.session_state.kpi_history)
+
+            st.success("✅ Изменения успешно сохранены.")
 
 
         # Конфигурация колонок
