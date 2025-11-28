@@ -273,53 +273,56 @@ if 'kpi_history' not in st.session_state:
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
-def filter_data_by_period(df, period_type, selected_month_str=None):
-    """Фильтрует и группирует данные: по месяцам (для Года) или по неделям (для Месяца)."""
+def filter_data_by_period(df, start_date, end_date, granularity):
+    """Фильтрует и группирует данные по выбранному диапазону и гранулярности."""
     df = df.copy()
 
-    # Преобразование в datetime64[ns] для Pandas-агрегации
+    # Преобразование в datetime64[ns]
     df['Дата_Начала_DT'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
     numerical_cols = ['Минимум', 'Цель', 'Факт']
 
-    # Отбрасываем строки, где нет даты или названия
-    df = df.dropna(subset=['Дата_Начала_DT', 'Название'])
+    # Отбрасываем строки без даты
+    df = df.dropna(subset=['Дата_Начала_DT'])
+    
+    # Фильтрация по диапазону дат
+    mask = (df['Дата_Начала_DT'].dt.date >= start_date) & (df['Дата_Начала_DT'].dt.date <= end_date)
+    df = df.loc[mask]
+
     if df.empty:
         return pd.DataFrame()
 
-    # Фильтрация и группировка
-    if period_type == "Год (по месяцам)":
-        # Ключ для группировки и сортировки (YYYY-MM)
-        df['Period_Key'] = df['Дата_Начала_DT'].dt.strftime('%Y-%m')
+    # Определение правила группировки (Resampling rule)
+    freq_map = {
+        "День": "D",
+        "Неделя": "W-MON",
+        "Месяц": "MS",
+        "Квартал": "QS",
+        "Год": "YS"
+    }
+    freq = freq_map.get(granularity, "MS")
 
-        # Метка для оси X (Январь 2024)
-        df['Период_Display'] = df['Дата_Начала_DT'].dt.strftime('%B %Y')
+    # Группировка
+    # Используем Grouper по дате
+    df_grouped = df.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq), 'Название'])[numerical_cols].mean().reset_index()
 
-        # Группируем по ключу периода и Названию KPI
-        df_grouped = df.groupby(['Period_Key', 'Период_Display', 'Название'])[numerical_cols].mean().reset_index()
+    # Форматирование периода для отображения
+    if granularity == "День":
+        df_grouped['Период'] = df_grouped['Дата_Начала_DT'].dt.strftime('%d.%m.%Y')
+    elif granularity == "Неделя":
+        # Для недели показываем начало - конец
+        df_grouped['Период'] = df_grouped['Дата_Начала_DT'].apply(
+            lambda x: f"{x.strftime('%d.%m')} - {(x + timedelta(days=6)).strftime('%d.%m.%Y')}"
+        )
+    elif granularity == "Месяц":
+        df_grouped['Период'] = df_grouped['Дата_Начала_DT'].dt.strftime('%B %Y')
+    elif granularity == "Квартал":
+        df_grouped['Период'] = df_grouped['Дата_Начала_DT'].apply(lambda x: f"Q{pd.Timestamp(x).quarter} {x.year}")
+    elif granularity == "Год":
+        df_grouped['Период'] = df_grouped['Дата_Начала_DT'].dt.strftime('%Y')
 
-        # Сортируем по надежному строковому ключу
-        df_grouped = df_grouped.sort_values('Period_Key')
-        df_grouped['Период'] = df_grouped['Период_Display']
+    # Сортировка
+    df_grouped = df_grouped.sort_values('Дата_Начала_DT')
 
-    else:  # Месяц (по неделям)
-        if selected_month_str is None:
-            return pd.DataFrame()
-
-        y, m = map(int, selected_month_str.split('-'))
-
-        # Фильтрация по году и месяцу
-        df_filtered = df[(df['Дата_Начала_DT'].dt.year == y) & (df['Дата_Начала_DT'].dt.month == m)].copy()
-
-        if df_filtered.empty:
-            return pd.DataFrame()
-
-        # Группировка по уже существующим надежным строковым колонкам
-        df_grouped = df_filtered.groupby(['Неделя_Год', 'Промежуток_Дат', 'Название'])[
-            numerical_cols].mean().reset_index()
-        df_grouped = df_grouped.sort_values('Неделя_Год')
-        df_grouped['Период'] = df_grouped['Промежуток_Дат']
-
-    # Возвращаем только необходимые для графика колонки
     return df_grouped[['Название', 'Минимум', 'Цель', 'Факт', 'Период']]
 
 
@@ -381,31 +384,42 @@ menu = st.sidebar.radio("Навигация", ["Сводный Дашборд", 
 if menu == "Сводный Дашборд":
     st.title("📊 Сводный операционный дашборд")
 
-    col_per1, col_per2 = st.columns([1, 2])
+    col_per1, col_per2 = st.columns([2, 1])
     with col_per1:
-        period_type = st.radio("Период отчета:", ["Год (по месяцам)", "Месяц (по неделям)"], horizontal=True,
-                               key="dashboard_period_radio")
+        # Выбор диапазона дат
+        today = datetime.now().date()
+        start_of_year = date(today.year, 1, 1)
+        
+        date_range = st.date_input(
+            "Период отчета:",
+            value=(start_of_year, today),
+            key="dashboard_date_range"
+        )
+    
+    with col_per2:
+        # Выбор гранулярности
+        granularity = st.selectbox(
+            "Шаг графика:",
+            ["День", "Неделя", "Месяц", "Квартал", "Год"],
+            index=2, # Default to Month
+            key="dashboard_granularity"
+        )
 
-    selected_month_str = None
-    if period_type == "Месяц (по неделям)":
-        with col_per2:
-            df_dates = st.session_state.kpi_history.copy()
-            df_dates['Дата_Начала_DT'] = pd.to_datetime(df_dates['Дата_Начала'], errors='coerce')
-            df_dates = df_dates.dropna(subset=['Дата_Начала_DT'])
-            df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.strftime('%Y-%m')
-            available_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
-
-            if not available_months:
-                available_months = [datetime.now().strftime('%Y-%m')]
-
-            default_index = 0 if available_months else 0
-            selected_month_str = st.selectbox("Выберите месяц:", available_months, index=default_index,
-                                              key="dashboard_month_select")
+    # Обработка случая, когда выбрана только одна дата в диапазоне
+    if isinstance(date_range, tuple):
+        if len(date_range) == 2:
+            start_date, end_date = date_range
+        elif len(date_range) == 1:
+            start_date = end_date = date_range[0]
+        else:
+            start_date = end_date = today
+    else:
+        start_date = end_date = date_range
 
     st.divider()
 
     df_source = st.session_state.kpi_history.copy()
-    df_viz = filter_data_by_period(df_source, period_type, selected_month_str)
+    df_viz = filter_data_by_period(df_source, start_date, end_date, granularity)
 
     if df_viz.empty:
         st.warning("Нет данных для отображения за выбранный период. Проверьте вкладку 'История (Редактор)'.")
@@ -452,26 +466,42 @@ if menu == "Сводный Дашборд":
 elif menu == "SMM Эффективность":
     st.title("📱 SMM Эффективность")
 
-    col_s1, col_s2 = st.columns([1, 2])
+    col_s1, col_s2 = st.columns([2, 1])
     with col_s1:
-        smm_period_type = st.radio("Масштаб:", ["Год (по месяцам)", "Месяц (по неделям)"], horizontal=True,
-                                   key="smm_radio")
+        # Выбор диапазона дат
+        today = datetime.now().date()
+        start_of_year = date(today.year, 1, 1)
+        
+        smm_date_range = st.date_input(
+            "Период отчета:",
+            value=(start_of_year, today),
+            key="smm_date_range"
+        )
+    
+    with col_s2:
+        # Выбор гранулярности
+        smm_granularity = st.selectbox(
+            "Шаг графика:",
+            ["День", "Неделя", "Месяц", "Квартал", "Год"],
+            index=2, # Default to Month
+            key="smm_granularity"
+        )
 
-    smm_month_str = None
-    if smm_period_type == "Месяц (по неделям)":
-        with col_s2:
-            df_dates = st.session_state.kpi_history.copy()
-            df_dates['Дата_Начала_DT'] = pd.to_datetime(df_dates['Дата_Начала'], errors='coerce')
-            df_dates = df_dates.dropna(subset=['Дата_Начала_DT'])
-            df_dates['Month_Str'] = df_dates['Дата_Начала_DT'].dt.strftime('%Y-%m')
-            smm_months = sorted(df_dates['Month_Str'].unique(), reverse=True)
-            default_index = 0 if smm_months else 0
-            smm_month_str = st.selectbox("Месяц:", smm_months, index=default_index, key="smm_select")
+    # Обработка диапазона
+    if isinstance(smm_date_range, tuple):
+        if len(smm_date_range) == 2:
+            s_start, s_end = smm_date_range
+        elif len(smm_date_range) == 1:
+            s_start = s_end = smm_date_range[0]
+        else:
+            s_start = s_end = today
+    else:
+        s_start = s_end = smm_date_range
 
     st.divider()
 
     df_source = st.session_state.kpi_history.copy()
-    df_smm_viz = filter_data_by_period(df_source, smm_period_type, smm_month_str)
+    df_smm_viz = filter_data_by_period(df_source, s_start, s_end, smm_granularity)
 
     # 3.1 Вовлеченность
     st.subheader("3.1 Вовлеченность (Engagement)")
@@ -503,7 +533,7 @@ elif menu == "Ввод данных KPI":
     col_date, col_cat = st.columns(2)
 
     with col_date:
-        input_date = st.date_input("1. Выберите любую дату в отчетной неделе", datetime.now().date(), key="input_date")
+        input_date = st.date_input("1. Выберите дату", datetime.now().date(), key="input_date")
 
     with col_cat:
         category = st.selectbox(
@@ -512,9 +542,9 @@ elif menu == "Ввод данных KPI":
             key="input_category_key"
         )
 
-    # Расчет недели и отображение
+    # Расчет недели и отображение (справочно)
     start_of_week, week_id, date_range = get_week_info(input_date)
-    st.info(f"Отчетный период: **{date_range}** ({week_id})")
+    st.info(f"Дата относится к неделе: **{date_range}** ({week_id})")
 
     available_kpis = KPI_STRUCTURE.get(category, {})
 
@@ -551,7 +581,7 @@ elif menu == "Ввод данных KPI":
 
         if submitted:
             new_row = {
-                "Дата_Начала": start_of_week,
+                "Дата_Начала": input_date, # Сохраняем точную выбранную дату
                 "Неделя_Год": week_id,
                 "Промежуток_Дат": date_range,
                 "Категория": category,
