@@ -311,7 +311,7 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     # Определение правила группировки (Resampling rule)
     freq_map = {
         "День": "D",
-        "Неделя": "W-MON",
+        "Неделя": "W-SUN",  # Неделя заканчивается в воскресенье
         "Месяц": "MS",
         "Квартал": "QS",
         "Год": "YS"
@@ -328,12 +328,12 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     
     # Группировка для средних
     if not df_mean.empty:
-        res_mean = df_mean.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq), 'Название'])[numerical_cols].mean().reset_index()
+        res_mean = df_mean.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq, label='right'), 'Название'])[numerical_cols].mean().reset_index()
         results.append(res_mean)
         
     # Группировка для сумм
     if not df_sum.empty:
-        res_sum = df_sum.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq), 'Название'])[numerical_cols].sum().reset_index()
+        res_sum = df_sum.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq, label='right'), 'Название'])[numerical_cols].sum().reset_index()
         results.append(res_sum)
     
     if results:
@@ -345,10 +345,23 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     if granularity == "День":
         df_grouped['Период'] = df_grouped['Дата_Начала_DT'].dt.strftime('%d.%m.%Y')
     elif granularity == "Неделя":
-        # Для недели показываем начало - конец
-        df_grouped['Период'] = df_grouped['Дата_Начала_DT'].apply(
-            lambda x: f"{x.strftime('%d.%m')} - {(x + timedelta(days=6)).strftime('%d.%m.%Y')}"
-        )
+        # Функция для формирования лейбла недели с учетом границ фильтра
+        def format_week_label(week_end_dt):
+            # week_end_dt - это воскресенье (из-за W-SUN и label='right')
+            week_start_dt = week_end_dt - timedelta(days=6)
+            
+            # Обрезаем по границам выбранного периода
+            # start_date и end_date приходят как date objects, конвертируем для сравнения
+            filter_start = pd.Timestamp(start_date)
+            filter_end = pd.Timestamp(end_date)
+            
+            actual_start = max(week_start_dt, filter_start)
+            actual_end = min(week_end_dt, filter_end)
+            
+            return f"{actual_start.strftime('%d.%m')} - {actual_end.strftime('%d.%m.%Y')}"
+
+        df_grouped['Период'] = df_grouped['Дата_Начала_DT'].apply(format_week_label)
+        
     elif granularity == "Месяц":
         df_grouped['Период'] = df_grouped['Дата_Начала_DT'].dt.strftime('%B %Y')
     elif granularity == "Квартал":
