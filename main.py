@@ -279,8 +279,19 @@ if 'kpi_history' not in st.session_state:
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
+def get_aggregation_type(kpi_name):
+    """Определяет тип агрегации (mean или sum) на основе названия KPI."""
+    # Ключевые слова, указывающие на усреднение
+    keywords_mean = ["%", "Коэффициент", "Индекс", "Уровень", "Стоимость", "Доля", "CTR", "ER", "DCR", "Share Rate"]
+    if any(k in kpi_name for k in keywords_mean):
+        return 'mean'
+    return 'sum'
+
+
 def filter_data_by_period(df, start_date, end_date, granularity):
-    """Фильтрует и группирует данные по выбранному диапазону и гранулярности."""
+    """Фильтрует и группирует данные по выбранному диапазону и гранулярности с учетом типа агрегации."""
     df = df.copy()
 
     # Преобразование в datetime64[ns]
@@ -307,9 +318,28 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     }
     freq = freq_map.get(granularity, "MS")
 
-    # Группировка
-    # Используем Grouper по дате
-    df_grouped = df.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq), 'Название'])[numerical_cols].mean().reset_index()
+    # Разделяем KPI на те, что нужно суммировать, и те, что нужно усреднять
+    df['Agg_Type'] = df['Название'].apply(get_aggregation_type)
+    
+    df_mean = df[df['Agg_Type'] == 'mean']
+    df_sum = df[df['Agg_Type'] == 'sum']
+    
+    results = []
+    
+    # Группировка для средних
+    if not df_mean.empty:
+        res_mean = df_mean.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq), 'Название'])[numerical_cols].mean().reset_index()
+        results.append(res_mean)
+        
+    # Группировка для сумм
+    if not df_sum.empty:
+        res_sum = df_sum.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq), 'Название'])[numerical_cols].sum().reset_index()
+        results.append(res_sum)
+    
+    if results:
+        df_grouped = pd.concat(results).reset_index(drop=True)
+    else:
+        return pd.DataFrame()
 
     # Форматирование периода для отображения
     if granularity == "День":
@@ -403,11 +433,27 @@ if menu == "Сводный Дашборд":
         )
     
     with col_per2:
+        # Ограничение гранулярности
+        if isinstance(date_range, tuple) and len(date_range) == 2:
+            duration_days = (date_range[1] - date_range[0]).days
+        else:
+            duration_days = 0
+            
+        available_granularities = ["День"]
+        if duration_days > 7:
+            available_granularities.append("Неделя")
+        if duration_days > 30:
+            available_granularities.append("Месяц")
+        if duration_days > 90:
+            available_granularities.append("Квартал")
+        if duration_days > 365:
+            available_granularities.append("Год")
+            
         # Выбор гранулярности
         granularity = st.selectbox(
             "Шаг графика:",
-            ["День", "Неделя", "Месяц", "Квартал", "Год"],
-            index=2, # Default to Month
+            available_granularities,
+            index=len(available_granularities)-1, # Default to largest available
             key="dashboard_granularity"
         )
 
@@ -485,11 +531,27 @@ elif menu == "SMM Эффективность":
         )
     
     with col_s2:
+        # Ограничение гранулярности
+        if isinstance(smm_date_range, tuple) and len(smm_date_range) == 2:
+            s_duration_days = (smm_date_range[1] - smm_date_range[0]).days
+        else:
+            s_duration_days = 0
+            
+        s_available_granularities = ["День"]
+        if s_duration_days > 7:
+            s_available_granularities.append("Неделя")
+        if s_duration_days > 30:
+            s_available_granularities.append("Месяц")
+        if s_duration_days > 90:
+            s_available_granularities.append("Квартал")
+        if s_duration_days > 365:
+            s_available_granularities.append("Год")
+
         # Выбор гранулярности
         smm_granularity = st.selectbox(
             "Шаг графика:",
-            ["День", "Неделя", "Месяц", "Квартал", "Год"],
-            index=2, # Default to Month
+            s_available_granularities,
+            index=len(s_available_granularities)-1, # Default to largest available
             key="smm_granularity"
         )
 
