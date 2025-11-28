@@ -503,26 +503,29 @@ elif menu == "SMM Эффективность":
     df_source = st.session_state.kpi_history.copy()
     df_smm_viz = filter_data_by_period(df_source, s_start, s_end, smm_granularity)
 
-    # 3.1 Вовлеченность
-    st.subheader("3.1 Вовлеченность (Engagement)")
-    tabs = st.tabs(["ER (Engagement Rate)", "Share Rate", "CTR"])
+    if df_smm_viz.empty:
+        st.warning("Нет данных для отображения за выбранный период.")
+    else:
+        # 3.1 Вовлеченность
+        st.subheader("3.1 Вовлеченность (Engagement)")
+        tabs = st.tabs(["ER (Engagement Rate)", "Share Rate", "CTR"])
 
-    with tabs[0]:
-        st.plotly_chart(render_chart(df_smm_viz, "ER (Engagement Rate), % [KPI.СММ.1]"), use_container_width=True)
+        with tabs[0]:
+            st.plotly_chart(render_chart(df_smm_viz, "ER (Engagement Rate), % [KPI.СММ.1]"), use_container_width=True, key="smm_er")
 
-    with tabs[1]:
-        st.plotly_chart(render_chart(df_smm_viz, "Share Rate (Репосты), %"), use_container_width=True)
+        with tabs[1]:
+            st.plotly_chart(render_chart(df_smm_viz, "Share Rate (Репосты), %"), use_container_width=True, key="smm_share")
 
-    with tabs[2]:
-        st.plotly_chart(render_chart(df_smm_viz, "CTR (Клики на сайт), %"), use_container_width=True)
+        with tabs[2]:
+            st.plotly_chart(render_chart(df_smm_viz, "CTR (Клики на сайт), %"), use_container_width=True, key="smm_ctr")
 
-    # 3.2 Фандрайзинг
-    st.subheader("3.2 SMM Фандрайзинг")
-    c_fund1, c_fund2 = st.columns(2)
-    with c_fund1:
-        st.plotly_chart(render_chart(df_smm_viz, "DCR (Конверсия в донат), %"), use_container_width=True)
-    with c_fund2:
-        st.plotly_chart(render_chart(df_smm_viz, "Сумма сбора SMM, руб. (Часть KPI.ФР.1)"), use_container_width=True)
+        # 3.2 Фандрайзинг
+        st.subheader("3.2 SMM Фандрайзинг")
+        c_fund1, c_fund2 = st.columns(2)
+        with c_fund1:
+            st.plotly_chart(render_chart(df_smm_viz, "DCR (Конверсия в донат), %"), use_container_width=True, key="smm_dcr")
+        with c_fund2:
+            st.plotly_chart(render_chart(df_smm_viz, "Сумма сбора SMM, руб. (Часть KPI.ФР.1)"), use_container_width=True, key="smm_money")
 
 
 # --- 3. ВВОД ДАННЫХ KPI ---
