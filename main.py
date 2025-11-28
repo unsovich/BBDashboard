@@ -651,36 +651,8 @@ elif menu == "История (Редактор)":
 
     else:
 
-        def save_changes():
-            """Безопасное сохранение изменений из редактора"""
-            changes = st.session_state.get("editor", None)
-
-            if not isinstance(changes, pd.DataFrame):
-                st.warning("Обновление не сохранено: неожиданный формат данных от редактора.")
-                return
-
-            # Применяем очистку типов к изменённым данным
-            cleaned = clean_data_types(changes)
-
-            # Проверяем, что критические данные не потерялись
-            if cleaned.empty and not changes.empty:
-                st.error("Ошибка сохранения: данные стали пустыми после обработки. Откатываем изменения.")
-                return
-
-            # Проверяем, что основные столбцы присутствуют
-            required_for_save = ['KPI_ID', 'Название', 'Дата_Начала']
-            if not all(col in cleaned.columns for col in required_for_save):
-                st.error("Ошибка: отсутствуют обязательные столбцы. Сохранение отменено.")
-                return
-
-            # Только если всё в порядке — сохраняем
-            st.session_state.kpi_history = cleaned
-
-            # Сохраняем в файл
-            save_to_file(st.session_state.kpi_history)
-
-            st.success("✅ Изменения успешно сохранены.")
-
+        # Подготовка данных для редактора (сортировка)
+        df_display = st.session_state.kpi_history.sort_values("Дата_Начала", ascending=False)
 
         # Конфигурация колонок
         column_config = {
@@ -699,14 +671,30 @@ elif menu == "История (Редактор)":
             "Комментарий": st.column_config.TextColumn("Комментарий", width="large")
         }
 
-        st.data_editor(
-            st.session_state.kpi_history.sort_values("Дата_Начала", ascending=False),
+        edited_df = st.data_editor(
+            df_display,
             column_config=column_config,
             num_rows="dynamic",
             use_container_width=True,
-            key="editor",
-            on_change=save_changes
+            key="editor"
         )
 
-        csv = st.session_state.kpi_history.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Скачать бэкап (CSV)", csv, "kpi_full_backup.csv", "text/csv")
+        # Логика сохранения изменений
+        # Сравниваем edited_df с исходным df_display, чтобы понять, были ли изменения
+        if not edited_df.equals(df_display):
+            
+            # Применяем очистку типов
+            cleaned = clean_data_types(edited_df)
+            
+            # Проверка на потерю данных
+            if cleaned.empty and not edited_df.empty:
+                st.error("Ошибка сохранения: данные повреждены при обработке.")
+            else:
+                # Обновляем session_state
+                st.session_state.kpi_history = cleaned
+                
+                # Сохраняем в файл
+                save_to_file(st.session_state.kpi_history)
+                
+                st.success("✅ Изменения сохранены.")
+                st.rerun()
