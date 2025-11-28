@@ -71,6 +71,20 @@ KPI_STRUCTURE = {
         "KPI.ЯЖ.SOC.2": "Индекс достижения социальной адаптации",
         "KPI.ЯЖ.SOC.3": "Стоимость комплексной помощи на 1 благополучателя"
     },
+    "Корп. Фандрайзинг (Результат)": {
+        "KPI.КФ.RES.1": "Объем привлеченных средств, руб.",
+        "KPI.КФ.RES.2": "Количество новых партнеров",
+        "KPI.КФ.RES.3": "Коэффициент удержания партнеров, %",
+        "KPI.КФ.RES.4": "Средний чек сделки, руб.",
+        "KPI.КФ.RES.5": "Стоимость привлечения партнера, руб."
+    },
+    "Корп. Фандрайзинг (Деятельность)": {
+        "KPI.КФ.ACT.1": "Количество установленных первых контактов",
+        "KPI.КФ.ACT.2": "Количество отправленных предложений",
+        "KPI.КФ.ACT.3": "Количество личных встреч с ЛПР",
+        "KPI.КФ.ACT.4": "Количество партнеров в работе",
+        "KPI.КФ.ACT.5": "Скорость конверсии (дни)"
+    },
     "Финансы": {
         "KPI.ФР.1_ОБЩИЙ": "Выполнение общего плана фандрайзинга, %",
         "KPI.ФИН.1": "Соблюдение бюджета (отклонение), %",
@@ -148,6 +162,18 @@ def generate_mock_data():
         "KPI.ЯЖ.SOC.1": ("Индекс целевого использования средств", 0.95, 1.0),
         "KPI.ЯЖ.SOC.2": ("Индекс достижения социальной адаптации", 0.6, 0.8),
         "KPI.ЯЖ.SOC.3": ("Стоимость комплексной помощи на 1 благополучателя", 5000.0, 4500.0),
+
+        # Корп. Фандрайзинг
+        "KPI.КФ.RES.1": ("Объем привлеченных средств, руб.", 500000.0, 1000000.0),
+        "KPI.КФ.RES.2": ("Количество новых партнеров", 1.0, 5.0),
+        "KPI.КФ.RES.3": ("Коэффициент удержания партнеров, %", 70.0, 90.0),
+        "KPI.КФ.RES.4": ("Средний чек сделки, руб.", 100000.0, 300000.0),
+        "KPI.КФ.RES.5": ("Стоимость привлечения партнера, руб.", 5000.0, 15000.0),
+        "KPI.КФ.ACT.1": ("Количество установленных первых контактов", 10.0, 30.0),
+        "KPI.КФ.ACT.2": ("Количество отправленных предложений", 5.0, 15.0),
+        "KPI.КФ.ACT.3": ("Количество личных встреч с ЛПР", 2.0, 8.0),
+        "KPI.КФ.ACT.4": ("Количество партнеров в работе", 15.0, 40.0),
+        "KPI.КФ.ACT.5": ("Скорость конверсии (дни)", 10.0, 45.0),
     }
 
     current_date = start_date
@@ -161,7 +187,7 @@ def generate_mock_data():
 
                     if kpi_id == "KPI.ФИН.1":
                         fact_val = abs(np.random.normal(2, 2))
-                    elif 'MONEY' in kpi_id:
+                    elif 'MONEY' in kpi_id or 'Объем привлеченных средств' in name or 'Средний чек сделки' in name or 'Стоимость привлечения партнера' in name:
                         fact_val = np.random.uniform(min_val * 0.8, target_val * 1.2)
                     else:
                         fact_val = np.random.normal(target_val, target_val * 0.15)
@@ -284,7 +310,7 @@ if 'kpi_history' not in st.session_state:
 def get_aggregation_type(kpi_name):
     """Определяет тип агрегации (mean или sum) на основе названия KPI."""
     # Ключевые слова, указывающие на усреднение
-    keywords_mean = ["%", "Коэффициент", "Индекс", "Уровень", "Стоимость", "Доля", "CTR", "ER", "DCR", "Share Rate"]
+    keywords_mean = ["%", "Коэффициент", "Индекс", "Уровень", "Стоимость", "Доля", "CTR", "ER", "DCR", "Share Rate", "Средний", "Скорость", "в работе"]
     if any(k in kpi_name for k in keywords_mean):
         return 'mean'
     return 'sum'
@@ -426,8 +452,16 @@ if os.path.exists(BACKUP_FILE):
 
 st.sidebar.markdown(f"**Записей в базе:** {len(st.session_state.kpi_history)}")
 
-# --- МЕНЮ ---
-menu = st.sidebar.radio("Навигация", ["Сводный Дашборд", "SMM Эффективность", "Ввод данных KPI", "История (Редактор)"])
+# --- БОКОВОЕ МЕНЮ ---
+with st.sidebar:
+    st.header("Навигация")
+    menu = st.selectbox(
+        "Выберите раздел:",
+        ["Сводный Дашборд", "SMM Эффективность", "Корпоративный Фандрайзинг", "Ввод данных KPI", "История (Редактор)"]
+    )
+    
+    st.divider()
+    st.markdown("### Управление данными")
 
 # --- 1. СВОДНЫЙ ДАШБОРД ---
 if menu == "Сводный Дашборд":
@@ -607,6 +641,96 @@ elif menu == "SMM Эффективность":
             st.plotly_chart(render_chart(df_smm_viz, "DCR (Конверсия в донат), %"), use_container_width=True, key="smm_dcr")
         with c_fund2:
             st.plotly_chart(render_chart(df_smm_viz, "Сумма сбора SMM, руб. (Часть KPI.ФР.1)"), use_container_width=True, key="smm_money")
+
+
+# --- 2.1 КОРПОРАТИВНЫЙ ФАНДРАЙЗИНГ ---
+elif menu == "Корпоративный Фандрайзинг":
+    st.title("🤝 Корпоративный Фандрайзинг")
+
+    col_cf1, col_cf2 = st.columns([2, 1])
+    with col_cf1:
+        # Выбор диапазона дат
+        today = datetime.now().date()
+        start_of_year = date(today.year, 1, 1)
+        
+        cf_date_range = st.date_input(
+            "Период отчета:",
+            value=(start_of_year, today),
+            key="cf_date_range"
+        )
+    
+    with col_cf2:
+        # Ограничение гранулярности
+        if isinstance(cf_date_range, tuple) and len(cf_date_range) == 2:
+            cf_duration_days = (cf_date_range[1] - cf_date_range[0]).days
+        else:
+            cf_duration_days = 0
+            
+        cf_available_granularities = ["День"]
+        if cf_duration_days > 7:
+            cf_available_granularities.append("Неделя")
+        if cf_duration_days > 30:
+            cf_available_granularities.append("Месяц")
+        if cf_duration_days > 90:
+            cf_available_granularities.append("Квартал")
+        if cf_duration_days > 365:
+            cf_available_granularities.append("Год")
+
+        # Выбор гранулярности
+        cf_granularity = st.selectbox(
+            "Шаг графика:",
+            cf_available_granularities,
+            index=len(cf_available_granularities)-1, # Default to largest available
+            key="cf_granularity"
+        )
+
+    # Обработка диапазона
+    if isinstance(cf_date_range, tuple):
+        if len(cf_date_range) == 2:
+            cf_start, cf_end = cf_date_range
+        elif len(cf_date_range) == 1:
+            cf_start = cf_end = cf_date_range[0]
+        else:
+            cf_start = cf_end = today
+    else:
+        cf_start = cf_end = cf_date_range
+
+    st.divider()
+
+    df_source = st.session_state.kpi_history.copy()
+    df_cf_viz = filter_data_by_period(df_source, cf_start, cf_end, cf_granularity)
+
+    if df_cf_viz.empty:
+        st.warning("Нет данных для отображения за выбранный период.")
+    else:
+        # Вкладки: Результат и Деятельность
+        cf_tabs = st.tabs(["Результат", "Деятельность"])
+
+        with cf_tabs[0]:
+            st.subheader("Финансовые и партнерские результаты")
+            
+            c_res1, c_res2 = st.columns(2)
+            with c_res1:
+                st.plotly_chart(render_chart(df_cf_viz, "Объем привлеченных средств, руб."), use_container_width=True, key="cf_res_money")
+                st.plotly_chart(render_chart(df_cf_viz, "Средний чек сделки, руб."), use_container_width=True, key="cf_res_avg_check")
+            with c_res2:
+                st.plotly_chart(render_chart(df_cf_viz, "Количество новых партнеров"), use_container_width=True, key="cf_res_new_partners")
+                st.plotly_chart(render_chart(df_cf_viz, "Стоимость привлечения партнера, руб."), use_container_width=True, key="cf_res_cac")
+            
+            st.plotly_chart(render_chart(df_cf_viz, "Коэффициент удержания партнеров, %"), use_container_width=True, key="cf_res_retention")
+
+        with cf_tabs[1]:
+            st.subheader("Воронка продаж и активность")
+            
+            c_act1, c_act2 = st.columns(2)
+            with c_act1:
+                st.plotly_chart(render_chart(df_cf_viz, "Количество установленных первых контактов"), use_container_width=True, key="cf_act_contacts")
+                st.plotly_chart(render_chart(df_cf_viz, "Количество личных встреч с ЛПР"), use_container_width=True, key="cf_act_meetings")
+            with c_act2:
+                st.plotly_chart(render_chart(df_cf_viz, "Количество отправленных предложений"), use_container_width=True, key="cf_act_offers")
+                st.plotly_chart(render_chart(df_cf_viz, "Количество партнеров в работе"), use_container_width=True, key="cf_act_pipeline")
+            
+            st.plotly_chart(render_chart(df_cf_viz, "Скорость конверсии (дни)"), use_container_width=True, key="cf_act_conversion_speed")
 
 
 # --- 3. ВВОД ДАННЫХ KPI ---
