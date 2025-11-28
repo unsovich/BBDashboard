@@ -85,7 +85,7 @@ KPI_STRUCTURE = {
 }
 
 # Определение колонок для создания пустой, но структурированной DF
-REQUIRED_COLUMNS = ["Дата_Начала", "Неделя_Год", "Промежуток_Дат", "Категория", "KPI_ID", "Название", "Минимум", "Цель",
+REQUIRED_COLUMNS = ["Дата_Начала", "Дата_Окончания", "Неделя_Год", "Промежуток_Дат", "Категория", "KPI_ID", "Название", "Минимум", "Цель",
                     "Факт", "Комментарий"]
 
 
@@ -210,6 +210,12 @@ def clean_data_types(df):
         df['Дата_Начала'] = pd.to_datetime(df['Дата_Начала'], errors='coerce').dt.date
     else:
         df['Дата_Начала'] = None
+
+    if 'Дата_Окончания' in df.columns:
+        df['Дата_Окончания'] = pd.to_datetime(df['Дата_Окончания'], errors='coerce').dt.date
+    else:
+        # Если нет даты окончания, считаем её равной дате начала (для старых записей)
+        df['Дата_Окончания'] = df['Дата_Начала']
 
     # Приведение числовых колонок к float (но НЕ удаляем строки с NaN)
     numerical_cols = ['Минимум', 'Цель', 'Факт']
@@ -536,7 +542,11 @@ elif menu == "Ввод данных KPI":
     col_date, col_cat = st.columns(2)
 
     with col_date:
-        input_date = st.date_input("1. Выберите дату", datetime.now().date(), key="input_date")
+        input_date_range = st.date_input(
+            "1. Выберите период (начало и конец)",
+            value=(datetime.now().date(), datetime.now().date() + timedelta(days=6)),
+            key="input_date_range"
+        )
 
     with col_cat:
         category = st.selectbox(
@@ -545,9 +555,22 @@ elif menu == "Ввод данных KPI":
             key="input_category_key"
         )
 
+    # Обработка диапазона
+    if isinstance(input_date_range, tuple):
+        if len(input_date_range) == 2:
+            start_date, end_date = input_date_range
+        elif len(input_date_range) == 1:
+            start_date = end_date = input_date_range[0]
+        else:
+            start_date = end_date = datetime.now().date()
+    else:
+        start_date = end_date = input_date_range
+
     # Расчет недели и отображение (справочно)
-    start_of_week, week_id, date_range = get_week_info(input_date)
-    st.info(f"Дата относится к неделе: **{date_range}** ({week_id})")
+    _, week_id, _ = get_week_info(start_date)
+    date_range_str = f"{start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}"
+    
+    st.info(f"Выбранный период: **{date_range_str}** (нач. неделя {week_id})")
 
     available_kpis = KPI_STRUCTURE.get(category, {})
 
@@ -584,9 +607,10 @@ elif menu == "Ввод данных KPI":
 
         if submitted:
             new_row = {
-                "Дата_Начала": input_date, # Сохраняем точную выбранную дату
+                "Дата_Начала": start_date,
+                "Дата_Окончания": end_date,
                 "Неделя_Год": week_id,
-                "Промежуток_Дат": date_range,
+                "Промежуток_Дат": date_range_str,
                 "Категория": category,
                 "KPI_ID": selected_kpi_key,
                 "Название": kpi_name_full,
@@ -606,7 +630,7 @@ elif menu == "Ввод данных KPI":
             # Сохраняем в файл
             save_to_file(st.session_state.kpi_history)
 
-            st.success(f"✅ Показатель '{kpi_name_full}' за {date_range} успешно добавлен!")
+            st.success(f"✅ Показатель '{kpi_name_full}' за {date_range_str} успешно добавлен!")
             st.rerun()
     else:
         st.warning("Выберите действительный KPI, чтобы ввести данные.")
@@ -661,7 +685,8 @@ elif menu == "История (Редактор)":
         # Конфигурация колонок
         column_config = {
             "KPI_ID": st.column_config.TextColumn("KPI ID", disabled=True),
-            "Дата_Начала": st.column_config.DateColumn("Дата начала", format="DD.MM.YYYY", disabled=True),
+            "Дата_Начала": st.column_config.DateColumn("Дата начала", format="DD.MM.YYYY"),
+            "Дата_Окончания": st.column_config.DateColumn("Дата окончания", format="DD.MM.YYYY"),
             "Неделя_Год": st.column_config.TextColumn("Неделя (ГГГГ-WW)", disabled=True),
             "Промежуток_Дат": st.column_config.TextColumn("Отчетный период", disabled=True),
 
