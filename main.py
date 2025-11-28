@@ -90,6 +90,14 @@ KPI_STRUCTURE = {
         "KPI.ФИН.1": "Соблюдение бюджета (отклонение), %",
         "KPI.ГР.1": "Грантовая эффективность (заявки/отчеты)"
     },
+    "Фандрайзинг (Эффективность)": {
+        "FR.INPUT.COSTS": "Прямые расходы (Реклама/Бюджет), руб.",
+        "FR.INPUT.HOURS": "Трудозатраты персонала, ч.",
+        "FR.OUTPUT.FUNDS": "Привлеченные средства (Факт), руб.",
+        "FR.OUTPUT.DONORS": "Количество доноров, чел.",
+        "FR.CONV.REACH": "Охват (Просмотры), ед.",
+        "FR.CONV.ACTIONS": "Целевые действия (Конверсии), ед."
+    },
     "HR и Администрирование": {
         "KPI.HR.1": "Просроченные HR-задачи (Адаптация/Развитие)",
         "KPI.ВЛ.1": "Прирост базы волонтеров, %",
@@ -174,6 +182,14 @@ def generate_mock_data():
         "KPI.КФ.ACT.3": ("Количество личных встреч с ЛПР", 2.0, 8.0),
         "KPI.КФ.ACT.4": ("Количество партнеров в работе", 15.0, 40.0),
         "KPI.КФ.ACT.5": ("Скорость конверсии (дни)", 10.0, 45.0),
+
+        # Фандрайзинг (Эффективность)
+        "FR.INPUT.COSTS": ("Прямые расходы (Реклама/Бюджет), руб.", 5000.0, 10000.0),
+        "FR.INPUT.HOURS": ("Трудозатраты персонала, ч.", 10.0, 20.0),
+        "FR.OUTPUT.FUNDS": ("Привлеченные средства (Факт), руб.", 50000.0, 100000.0),
+        "FR.OUTPUT.DONORS": ("Количество доноров, чел.", 50.0, 100.0),
+        "FR.CONV.REACH": ("Охват (Просмотры), ед.", 10000.0, 20000.0),
+        "FR.CONV.ACTIONS": ("Целевые действия (Конверсии), ед.", 100.0, 200.0),
     }
 
     current_date = start_date
@@ -187,8 +203,10 @@ def generate_mock_data():
 
                     if kpi_id == "KPI.ФИН.1":
                         fact_val = abs(np.random.normal(2, 2))
-                    elif 'MONEY' in kpi_id or 'Объем привлеченных средств' in name or 'Средний чек сделки' in name or 'Стоимость привлечения партнера' in name:
+                    elif 'MONEY' in kpi_id or 'Объем привлеченных средств' in name or 'Средний чек сделки' in name or 'Стоимость привлечения партнера' in name or 'Привлеченные средства' in name or 'Прямые расходы' in name:
                         fact_val = np.random.uniform(min_val * 0.8, target_val * 1.2)
+                    elif 'Охват' in name:
+                         fact_val = np.random.uniform(min_val * 0.8, target_val * 1.5)
                     else:
                         fact_val = np.random.normal(target_val, target_val * 0.15)
 
@@ -457,7 +475,7 @@ with st.sidebar:
     st.header("Навигация")
     menu = st.selectbox(
         "Выберите раздел:",
-        ["Сводный Дашборд", "SMM Эффективность", "Корпоративный Фандрайзинг", "Ввод данных KPI", "История (Редактор)"]
+        ["Сводный Дашборд", "Динамика Сборов", "SMM Эффективность", "Корпоративный Фандрайзинг", "Ввод данных KPI", "История (Редактор)"]
     )
     
     st.divider()
@@ -560,6 +578,179 @@ if menu == "Сводный Дашборд":
                 st.plotly_chart(render_chart(df_viz, "Объем предоставленной целевой помощи"), use_container_width=True, key="chart_yz_target_aid")
             
             st.plotly_chart(render_chart(df_viz, "Индекс достижения социальной адаптации"), use_container_width=True, key="chart_yz_social_adapt")
+
+# --- 1.1 ДИНАМИКА СБОРОВ (НОВЫЙ РАЗДЕЛ) ---
+elif menu == "Динамика Сборов":
+    st.title("📈 Динамика Сборов и Эффективность")
+    
+    # Константа стоимости часа (можно вынести в настройки)
+    DEFAULT_HOURLY_RATE = 500.0
+
+    col_fr1, col_fr2 = st.columns([2, 1])
+    with col_fr1:
+        # Выбор диапазона дат
+        today = datetime.now().date()
+        start_of_year = date(today.year, 1, 1)
+        
+        fr_date_range = st.date_input(
+            "Период отчета:",
+            value=(start_of_year, today),
+            key="fr_date_range"
+        )
+    
+    with col_fr2:
+        # Ограничение гранулярности
+        if isinstance(fr_date_range, tuple) and len(fr_date_range) == 2:
+            fr_duration_days = (fr_date_range[1] - fr_date_range[0]).days
+        else:
+            fr_duration_days = 0
+            
+        fr_available_granularities = ["День"]
+        if fr_duration_days > 7:
+            fr_available_granularities.append("Неделя")
+        if fr_duration_days > 30:
+            fr_available_granularities.append("Месяц")
+        if fr_duration_days > 90:
+            fr_available_granularities.append("Квартал")
+        if fr_duration_days > 365:
+            fr_available_granularities.append("Год")
+
+        # Выбор гранулярности
+        fr_granularity = st.selectbox(
+            "Шаг графика:",
+            fr_available_granularities,
+            index=len(fr_available_granularities)-1, 
+            key="fr_granularity"
+        )
+
+    # Обработка диапазона
+    if isinstance(fr_date_range, tuple):
+        if len(fr_date_range) == 2:
+            fr_start, fr_end = fr_date_range
+        elif len(fr_date_range) == 1:
+            fr_start = fr_end = fr_date_range[0]
+        else:
+            fr_start = fr_end = today
+    else:
+        fr_start = fr_end = fr_date_range
+
+    st.divider()
+
+    df_source = st.session_state.kpi_history.copy()
+    df_fr_viz = filter_data_by_period(df_source, fr_start, fr_end, fr_granularity)
+
+    if df_fr_viz.empty:
+        st.warning("Нет данных для отображения за выбранный период.")
+    else:
+        # --- РАСЧЕТ МЕТРИК ---
+        # Нам нужно сгруппировать данные по периодам, чтобы посчитать производные метрики (ROI, CoF)
+        # filter_data_by_period уже возвращает сгруппированные данные по 'Название' и 'Период'
+        
+        # Разворачиваем таблицу (pivot), чтобы метрики стали колонками
+        df_pivot = df_fr_viz.pivot(index='Период', columns='Название', values='Факт').reset_index()
+        
+        # Заполняем пропуски нулями для корректного расчета
+        df_pivot = df_pivot.fillna(0)
+        
+        # Определяем названия колонок (ключи могут отличаться, используем точные названия из KPI_STRUCTURE)
+        col_costs = "Прямые расходы (Реклама/Бюджет), руб."
+        col_hours = "Трудозатраты персонала, ч."
+        col_funds = "Привлеченные средства (Факт), руб."
+        col_donors = "Количество доноров, чел."
+        col_reach = "Охват (Просмотры), ед."
+        col_actions = "Целевые действия (Конверсии), ед."
+        
+        # Проверяем наличие колонок
+        available_cols = df_pivot.columns.tolist()
+        
+        # Расчет производных метрик
+        if col_costs in available_cols and col_hours in available_cols and col_funds in available_cols:
+            df_pivot['Total_Cost'] = df_pivot[col_costs] + (df_pivot[col_hours] * DEFAULT_HOURLY_RATE)
+            
+            # ROI = (Income - Cost) / Cost * 100
+            df_pivot['ROI'] = df_pivot.apply(
+                lambda row: ((row[col_funds] - row['Total_Cost']) / row['Total_Cost'] * 100) if row['Total_Cost'] > 0 else 0, axis=1
+            )
+            
+            # CoF = Cost / Income
+            df_pivot['CoF'] = df_pivot.apply(
+                lambda row: (row['Total_Cost'] / row[col_funds]) if row[col_funds] > 0 else 0, axis=1
+            )
+        else:
+            df_pivot['ROI'] = 0
+            df_pivot['CoF'] = 0
+            
+        if col_reach in available_cols and col_actions in available_cols:
+             df_pivot['Conversion'] = df_pivot.apply(
+                lambda row: (row[col_actions] / row[col_reach] * 100) if row[col_reach] > 0 else 0, axis=1
+            )
+        else:
+            df_pivot['Conversion'] = 0
+
+        # --- ОТОБРАЖЕНИЕ КАРТОЧЕК (СРЕДНИЕ ЗА ПЕРИОД) ---
+        avg_roi = df_pivot['ROI'].mean()
+        avg_cof = df_pivot['CoF'].mean()
+        avg_conv = df_pivot['Conversion'].mean()
+        
+        st.subheader("Сводные показатели эффективности")
+        m1, m2, m3 = st.columns(3)
+        
+        with m1:
+            st.metric("Средний ROI", f"{avg_roi:.1f}%", delta=f"{avg_roi - 100:.1f}%" if avg_roi > 0 else None)
+            st.caption("Цель: > 200%")
+            
+        with m2:
+            st.metric("Стоимость сбора (CoF)", f"{avg_cof:.2f} ₽", delta=None)
+            st.caption("Затраты на 1 привлеченный рубль")
+            
+        with m3:
+            st.metric("Конверсия (CR)", f"{avg_conv:.2f}%", delta=None)
+            st.caption("Из охвата в действие")
+
+        st.divider()
+        
+        # --- ГРАФИКИ ---
+        
+        # 1. ROI и CoF
+        st.subheader("Финансовая эффективность")
+        
+        fig_roi = go.Figure()
+        fig_roi.add_trace(go.Scatter(x=df_pivot['Период'], y=df_pivot['ROI'], name='ROI (%)', line=dict(color='green', width=3)))
+        fig_roi.add_hline(y=0, line_dash="dash", line_color="red", annotation_text="Убыточность")
+        fig_roi.update_layout(title="Динамика ROI (Возврат инвестиций)", yaxis_title="ROI, %", height=350)
+        st.plotly_chart(fig_roi, use_container_width=True)
+        
+        fig_cof = go.Figure()
+        fig_cof.add_trace(go.Bar(x=df_pivot['Период'], y=df_pivot['CoF'], name='CoF (Cost of Fundraising)', marker_color='orange'))
+        fig_cof.update_layout(title="Динамика стоимости сбора (CoF)", yaxis_title="Затраты на 1 руб.", height=350)
+        st.plotly_chart(fig_cof, use_container_width=True)
+        
+        # 2. Воронка / Конверсия
+        st.subheader("Операционная продуктивность")
+        
+        c_conv1, c_conv2 = st.columns(2)
+        with c_conv1:
+            # График конверсии
+            fig_conv = go.Figure()
+            fig_conv.add_trace(go.Scatter(x=df_pivot['Период'], y=df_pivot['Conversion'], name='Конверсия %', line=dict(color='purple', width=3), fill='tozeroy'))
+            fig_conv.update_layout(title="Динамика Конверсии", yaxis_title="%", height=350)
+            st.plotly_chart(fig_conv, use_container_width=True)
+            
+        with c_conv2:
+            # Абсолютные значения (Охват vs Действия)
+            if col_reach in available_cols and col_actions in available_cols:
+                fig_funnel = go.Figure()
+                fig_funnel.add_trace(go.Bar(x=df_pivot['Период'], y=df_pivot[col_reach], name='Охват', marker_color='lightblue'))
+                fig_funnel.add_trace(go.Scatter(x=df_pivot['Период'], y=df_pivot[col_actions], name='Действия', yaxis='y2', line=dict(color='blue', width=3)))
+                
+                fig_funnel.update_layout(
+                    title="Воронка: Охват vs Действия",
+                    yaxis=dict(title="Охват"),
+                    yaxis2=dict(title="Действия", overlaying='y', side='right'),
+                    height=350,
+                    legend=dict(x=0, y=1.1, orientation='h')
+                )
+                st.plotly_chart(fig_funnel, use_container_width=True)
 
 # --- 2. SMM ЭФФЕКТИВНОСТЬ ---
 elif menu == "SMM Эффективность":
