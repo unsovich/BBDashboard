@@ -413,6 +413,7 @@ if menu == "Сводный Дашборд":
         st.subheader("Ключевые показатели")
         
         # Общий финансовый показатель
+        kpi_finance = "Выполнение общего плана фандрайзинга, %"
         st.plotly_chart(render_chart(df_viz, kpi_finance), use_container_width=True)
 
         st.divider()
