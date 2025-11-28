@@ -424,29 +424,29 @@ if menu == "Сводный Дашборд":
         with prog_tabs[0]:
             c_vs1, c_vs2 = st.columns(2)
             with c_vs1:
-                st.plotly_chart(render_chart(df_viz, "Количество проведенных занятий (факт/план)"), use_container_width=True)
+                st.plotly_chart(render_chart(df_viz, "Количество проведенных занятий (факт/план)"), use_container_width=True, key="chart_vs_classes")
             with c_vs2:
-                st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True)
+                st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_vs_beneficiaries")
             
-            st.plotly_chart(render_chart(df_viz, "Индекс достижения социальной реабилитации"), use_container_width=True)
+            st.plotly_chart(render_chart(df_viz, "Индекс достижения социальной реабилитации"), use_container_width=True, key="chart_vs_social_rehab")
 
         with prog_tabs[1]:
             c_np1, c_np2 = st.columns(2)
             with c_np1:
-                st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True)
+                st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_np_beneficiaries")
             with c_np2:
-                st.plotly_chart(render_chart(df_viz, "Объем предоставленной помощи (денежная форма)"), use_container_width=True)
+                st.plotly_chart(render_chart(df_viz, "Объем предоставленной помощи (денежная форма)"), use_container_width=True, key="chart_np_money")
             
-            st.plotly_chart(render_chart(df_viz, "Коэффициент своевременности рассмотрения заявок"), use_container_width=True)
+            st.plotly_chart(render_chart(df_viz, "Коэффициент своевременности рассмотрения заявок"), use_container_width=True, key="chart_np_timeliness")
 
         with prog_tabs[2]:
             c_yz1, c_yz2 = st.columns(2)
             with c_yz1:
-                st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True)
+                st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_yz_beneficiaries")
             with c_yz2:
-                st.plotly_chart(render_chart(df_viz, "Объем предоставленной целевой помощи"), use_container_width=True)
+                st.plotly_chart(render_chart(df_viz, "Объем предоставленной целевой помощи"), use_container_width=True, key="chart_yz_target_aid")
             
-            st.plotly_chart(render_chart(df_viz, "Индекс достижения социальной адаптации"), use_container_width=True)
+            st.plotly_chart(render_chart(df_viz, "Индекс достижения социальной адаптации"), use_container_width=True, key="chart_yz_social_adapt")
 
 # --- 2. SMM ЭФФЕКТИВНОСТЬ ---
 elif menu == "SMM Эффективность":
