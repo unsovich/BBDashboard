@@ -13,7 +13,10 @@ from .campaign_data import (
     add_campaign,
     update_campaign,
     get_campaign_by_id,
-    load_campaigns
+    load_campaigns,
+    add_collection_update,
+    get_collection_history,
+    get_collection_summary
 )
 from .campaign_analytics import (
     calculate_campaign_metrics,
@@ -457,3 +460,233 @@ def export_campaign_report(campaign_id: str, format: str = 'csv') -> Optional[by
         return output.getvalue()
     
     return None
+
+
+def render_collection_update_form() -> None:
+    """
+    Форма для инкрементального добавления сборов с историей
+    """
+    st.subheader("➕ Обновление сборов")
+    st.markdown("Добавьте новую собранную сумму. Она автоматически прибавится к текущему сбору.")
+    
+    campaigns_df = load_campaigns()
+    
+    if campaigns_df.empty:
+        st.info("📭 Нет кампаний. Создайте кампанию сначала.")
+        return
+    
+    # Фильтр только активных кампаний
+    active_campaigns = campaigns_df[campaigns_df['status'] == 'active']
+    
+    if active_campaigns.empty:
+        st.warning("⚠️ Нет активных кампаний для обновления")
+        return
+    
+    # Выбор кампании
+    campaign_options = {
+        row['campaign_id']: f"{row['name']} (текущий сбор: {row['collected_amount']:,.0f} ₽)"
+        for _, row in active_campaigns.iterrows()
+    }
+    
+    selected_id = st.selectbox(
+        "Выберите кампанию:",
+        options=list(campaign_options.keys()),
+        format_func=lambda x: campaign_options[x],
+        key="collection_update_campaign_select"
+    )
+    
+    if not selected_id:
+        return
+    
+    campaign = get_campaign_by_id(selected_id)
+    
+    if campaign is None:
+        st.error("❌ Кампания не найдена")
+        return
+    
+    st.divider()
+    
+    # Текущая информация
+    col_curr1, col_curr2, col_curr3 = st.columns(3)
+    
+    with col_curr1:
+        st.metric("Текущий сбор", f"{campaign['collected_amount']:,.0f} ₽")
+    
+    with col_curr2:
+        st.metric("Цель", f"{campaign['target_amount']:,.0f} ₽")
+    
+    with col_curr3:
+        remaining = campaign['target_amount'] - campaign['collected_amount']
+        st.metric("До цели осталось", f"{remaining:,.0f} ₽")
+    
+    st.divider()
+    
+    # Форма добавления
+    with st.form("add_collection_form"):
+        st.markdown("### 💰 Новое поступление")
+        
+        col_form1, col_form2 = st.columns(2)
+        
+        with col_form1:
+            amount_to_add = st.number_input(
+                "Сумма поступления (₽) *",
+                min_value=0.0,
+                value=0.0,
+                step=100.0,
+                help="Сумма, которую нужно добавить к текущему сбору"
+            )
+        
+        with col_form2:
+            collection_date = st.date_input(
+                "Дата поступления *",
+                value=datetime.now().date(),
+                help="Когда поступили средства"
+            )
+        
+        note = st.text_area(
+            "Примечание (необязательно)",
+            placeholder="Например: Перевод от партнёра Х, Сбор через VK Ads и т.д.",
+            height=80
+        )
+        
+        # Предпросмотр
+        if amount_to_add > 0:
+            new_total = campaign['collected_amount'] + amount_to_add
+            progress = (new_total / campaign['target_amount'] * 100) if campaign['target_amount'] > 0 else 0
+            
+            st.info(f"📊 После добавления: **{new_total:,.0f} ₽** ({progress:.1f}% от цели)")
+        
+        submitted = st.form_submit_button("💾 Добавить сбор", type="primary")
+        
+        if submitted:
+            if amount_to_add <= 0:
+                st.error("⚠️ Сумма должна быть больше нуля")
+            else:
+                result = add_collection_update(
+                    campaign_id=selected_id,
+                    amount_added=amount_to_add,
+                    note=note,
+                    update_date=collection_date
+                )
+                
+                if result['success']:
+                    st.success(f"✅ {result['message']}")
+                    st.balloons()
+                    st.rerun()
+                else:
+                    st.error(f"❌ {result['message']}")
+    
+    st.divider()
+    
+    # История сборов
+    st.subheader("📜 История обновлений")
+    
+    history_df = get_collection_history(selected_id)
+    summary = get_collection_summary(selected_id)
+    
+    if summary:
+        # Сводка
+        sum_col1, sum_col2, sum_col3, sum_col4 = st.columns(4)
+        
+        with sum_col1:
+            st.metric("Всего обновлений", summary['updates_count'])
+        
+        with sum_col2:
+            if summary['last_update_date']:
+                st.metric("Последнее обновление", summary['last_update_date'].strftime('%d.%m.%Y'))
+            else:
+                st.metric("Последнее обновление", "—")
+        
+        with sum_col3:
+            st.metric("Последняя сумма", f"{summary['last_update_amount']:,.0f} ₽")
+        
+        with sum_col4:
+            st.metric("Среднее поступление", f"{summary['average_update']:,.0f} ₽")
+    
+    if not history_df.empty:
+        st.divider()
+        
+        # Визуализация истории
+        viz_col1, viz_col2 = st.columns([2, 1])
+        
+        with viz_col1:
+            # График накопительной суммы
+            import plotly.graph_objects as go
+            
+            # Сортируем по дате
+            history_sorted = history_df.sort_values('update_date')
+            
+            fig = go.Figure()
+            
+            fig.add_trace(go.Scatter(
+                x=history_sorted['update_date'],
+                y=history_sorted['total_after_update'],
+                mode='lines+markers',
+                name='Накопительная сумма',
+                line=dict(color='#3b82f6', width=3),
+                marker=dict(size=8),
+                fill='tozeroy'
+            ))
+            
+            # Целевая линия
+            fig.add_hline(
+                y=campaign['target_amount'],
+                line_dash="dash",
+                line_color="#10b981",
+                annotation_text=f"Цель: {campaign['target_amount']:,.0f} ₽"
+            )
+            
+            fig.update_layout(
+                title="Динамика сборов",
+                xaxis_title="Дата",
+                yaxis_title="Сумма (₽)",
+                height=350,
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with viz_col2:
+            # Столбчатая диаграмма поступлений
+            fig2 = go.Figure()
+            
+            fig2.add_trace(go.Bar(
+                x=history_sorted['update_date'].astype(str),
+                y=history_sorted['amount_added'],
+                marker_color='#8b5cf6',
+                text=history_sorted['amount_added'].apply(lambda x: f"{x:,.0f}"),
+                textposition='auto'
+            ))
+            
+            fig2.update_layout(
+                title="Поступления",
+                xaxis_title="Дата",
+                yaxis_title="Сумма (₽)",
+                height=350,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig2, use_container_width=True)
+        
+        st.divider()
+        
+        # Таблица истории
+        st.markdown("**Детальная история:**")
+        
+        display_history = history_df.copy()
+        display_history['update_date'] = pd.to_datetime(display_history['update_date']).dt.strftime('%d.%m.%Y')
+        display_history['amount_added'] = display_history['amount_added'].apply(lambda x: f"+{x:,.0f} ₽")
+        display_history['total_after_update'] = display_history['total_after_update'].apply(lambda x: f"{x:,.0f} ₽")
+        
+        # Оставляем только нужные колонки
+        display_history = display_history[['update_date', 'amount_added', 'total_after_update', 'note']]
+        display_history.columns = ['Дата', 'Добавлено', 'Итого', 'Примечание']
+        
+        st.dataframe(
+            display_history,
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("📭 История обновлений пуста. Добавьте первое поступление выше.")
+

@@ -18,7 +18,8 @@ try:
         render_campaign_input_form,
         render_campaign_editor,
         render_campaign_detail_view,
-        export_campaign_report
+        export_campaign_report,
+        render_collection_update_form
     )
     CAMPAIGNS_MODULE_AVAILABLE = True
 except ImportError as e:
@@ -955,7 +956,7 @@ elif menu == "Мониторинг Кампаний":
             st.session_state.campaigns_data = load_campaigns()
         
         # Вкладки
-        campaign_tabs = st.tabs(["📊 Сводка", "🔍 Детали", "➕ Новая кампания", "📈 Сравнение каналов", "✏️ Редактор"])
+        campaign_tabs = st.tabs(["📊 Сводка", "🔍 Детали", "➕ Новая кампания", "� Обновление сборов", "�📈 Сравнение каналов", "✏️ Редактор"])
         
         # --- Вкладка 1: Сводка ---
         with campaign_tabs[0]:
@@ -1076,8 +1077,12 @@ elif menu == "Мониторинг Кампаний":
         with campaign_tabs[2]:
             render_campaign_input_form()
         
-        # --- Вкладка 4: Сравнение каналов ---
+        # --- Вкладка 4: Обновление сборов ---
         with campaign_tabs[3]:
+            render_collection_update_form()
+        
+        # --- Вкладка 5: Сравнение каналов ---
+        with campaign_tabs[4]:
             st.subheader("📊 Сравнительный анализ каналов")
             
             campaigns_df = load_campaigns()
@@ -1125,8 +1130,8 @@ elif menu == "Мониторинг Кампаний":
             else:
                 st.info("📭 Нет данных для сравнения. Создайте хотя бы одну кампанию.")
         
-        # --- Вкладка 5: Редактор ---
-        with campaign_tabs[4]:
+        # --- Вкладка 6: Редактор ---
+        with campaign_tabs[5]:
             render_campaign_editor()
 
 

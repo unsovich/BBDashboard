@@ -13,6 +13,9 @@ from typing import Dict, List, Optional, Any
 # Путь к файлу хранения кампаний
 CAMPAIGNS_FILE = "data/campaigns.pkl"
 
+# Путь к файлу истории сборов
+COLLECTION_HISTORY_FILE = "data/collection_history.pkl"
+
 
 def ensure_data_directory():
     """Создает директорию data, если её нет"""
@@ -260,3 +263,166 @@ def get_campaigns_by_date_range(start_date: date, end_date: date) -> pd.DataFram
     mask = (df['start_date_dt'] <= end_dt) & (df['end_date_dt'] >= start_dt)
     
     return df[mask].drop(columns=['start_date_dt', 'end_date_dt'])
+
+
+# --- ИСТОРИЯ СБОРОВ ---
+
+def create_empty_collection_history_df() -> pd.DataFrame:
+    """Создает пустой DataFrame для истории сборов"""
+    return pd.DataFrame(columns=[
+        'history_id',           # Уникальный ID записи
+        'campaign_id',          # ID кампании
+        'update_date',          # Дата обновления
+        'amount_added',         # Добавленная сумма
+        'total_after_update',   # Общая сумма после обновления
+        'note',                 # Примечание/комментарий
+        'created_at'            # Время создания записи
+    ])
+
+
+def load_collection_history() -> pd.DataFrame:
+    """Загружает историю сборов из файла"""
+    ensure_data_directory()
+    
+    try:
+        if os.path.exists(COLLECTION_HISTORY_FILE):
+            with open(COLLECTION_HISTORY_FILE, 'rb') as f:
+                df = pickle.load(f)
+                if isinstance(df, pd.DataFrame):
+                    return df
+    except Exception as e:
+        print(f"Ошибка загрузки истории сборов: {e}")
+    
+    return create_empty_collection_history_df()
+
+
+def save_collection_history(df: pd.DataFrame) -> bool:
+    """Сохраняет историю сборов в файл"""
+    ensure_data_directory()
+    
+    try:
+        with open(COLLECTION_HISTORY_FILE, 'wb') as f:
+            pickle.dump(df, f)
+        return True
+    except Exception as e:
+        print(f"Ошибка сохранения истории сборов: {e}")
+        return False
+
+
+def add_collection_update(
+    campaign_id: str,
+    amount_added: float,
+    note: str = "",
+    update_date: Optional[date] = None
+) -> Dict[str, Any]:
+    """
+    Добавляет новую запись в историю сборов и обновляет общую сумму кампании
+    
+    Args:
+        campaign_id: ID кампании
+        amount_added: Добавленная сумма (положительная)
+        note: Примечание/комментарий
+        update_date: Дата обновления (по умолчанию - сегодня)
+    
+    Returns:
+        Dict с результатом операции
+    """
+    try:
+        # Загружаем данные
+        campaigns_df = load_campaigns()
+        history_df = load_collection_history()
+        
+        # Проверяем существование кампании
+        if campaign_id not in campaigns_df['campaign_id'].values:
+            return {
+                'success': False,
+                'message': f"Кампания {campaign_id} не найдена"
+            }
+        
+        # Получаем текущую сумму
+        campaign = campaigns_df[campaigns_df['campaign_id'] == campaign_id].iloc[0]
+        current_amount = float(campaign['collected_amount'])
+        new_total = current_amount + amount_added
+        
+        # Создаем запись в истории
+        if update_date is None:
+            update_date = datetime.now().date()
+        
+        history_id = f"HIST_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        
+        new_history_record = {
+            'history_id': history_id,
+            'campaign_id': campaign_id,
+            'update_date': update_date,
+            'amount_added': amount_added,
+            'total_after_update': new_total,
+            'note': note,
+            'created_at': datetime.now()
+        }
+        
+        # Добавляем в историю
+        new_history_df = pd.DataFrame([new_history_record])
+        history_df = pd.concat([history_df, new_history_df], ignore_index=True)
+        
+        # Обновляем кампанию
+        campaigns_df.loc[campaigns_df['campaign_id'] == campaign_id, 'collected_amount'] = new_total
+        campaigns_df.loc[campaigns_df['campaign_id'] == campaign_id, 'updated_at'] = datetime.now()
+        
+        # Сохраняем
+        if save_collection_history(history_df) and save_campaigns(campaigns_df):
+            return {
+                'success': True,
+                'message': f"Добавлено {amount_added:,.0f} ₽. Новая общая сумма: {new_total:,.0f} ₽",
+                'new_total': new_total,
+                'amount_added': amount_added
+            }
+        else:
+            return {
+                'success': False,
+                'message': "Ошибка сохранения данных"
+            }
+            
+    except Exception as e:
+        return {
+            'success': False,
+            'message': f"Ошибка добавления сбора: {str(e)}"
+        }
+
+
+def get_collection_history(campaign_id: str) -> pd.DataFrame:
+    """Возвращает историю сборов для конкретной кампании"""
+    history_df = load_collection_history()
+    
+    if history_df.empty:
+        return history_df
+    
+    return history_df[history_df['campaign_id'] == campaign_id].sort_values(
+        'update_date', ascending=False
+    )
+
+
+def get_collection_summary(campaign_id: str) -> Dict[str, Any]:
+    """Возвращает сводку по сборам кампании"""
+    history_df = get_collection_history(campaign_id)
+    campaign = get_campaign_by_id(campaign_id)
+    
+    if campaign is None:
+        return {}
+    
+    if history_df.empty:
+        return {
+            'total_collected': campaign['collected_amount'],
+            'updates_count': 0,
+            'last_update_date': None,
+            'last_update_amount': 0,
+            'average_update': 0
+        }
+    
+    return {
+        'total_collected': campaign['collected_amount'],
+        'updates_count': len(history_df),
+        'last_update_date': history_df.iloc[0]['update_date'],
+        'last_update_amount': history_df.iloc[0]['amount_added'],
+        'average_update': history_df['amount_added'].mean()
+    }
+
