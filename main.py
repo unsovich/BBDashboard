@@ -1088,3 +1088,58 @@ elif menu == "История (Редактор)":
                 
                 st.success("✅ Изменения сохранены.")
                 st.rerun()
+        
+        # --- СТАТИСТИКА ---
+        st.divider()
+        st.subheader("📊 Статистика базы данных")
+        
+        stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+        
+        with stat_col1:
+            st.metric("Всего записей", len(st.session_state.kpi_history))
+        
+        with stat_col2:
+            unique_kpis = st.session_state.kpi_history['Название'].nunique()
+            st.metric("Уникальных KPI", unique_kpis)
+        
+        with stat_col3:
+            unique_categories = st.session_state.kpi_history['Категория'].nunique()
+            st.metric("Категорий", unique_categories)
+        
+        with stat_col4:
+            if 'Дата_Начала' in st.session_state.kpi_history.columns:
+                date_range_days = (
+                    pd.to_datetime(st.session_state.kpi_history['Дата_Начала']).max() - 
+                    pd.to_datetime(st.session_state.kpi_history['Дата_Начала']).min()
+                ).days
+                st.metric("Диапазон дней", date_range_days)
+        
+        # Распределение по категориям
+        st.markdown("**Распределение записей по категориям:**")
+        category_counts = st.session_state.kpi_history['Категория'].value_counts()
+        
+        for cat, count in category_counts.items():
+            st.caption(f"• {cat}: {count} записей")
+        
+        # --- ЭКСПОРТ ДАННЫХ ---
+        st.divider()
+        st.subheader("📥 Экспорт данных")
+        
+        col_export1, col_export2 = st.columns([2, 1])
+        
+        with col_export1:
+            st.markdown("Скачайте все данные в формате CSV для анализа в Excel или Google Sheets.")
+        
+        with col_export2:
+            # Подготовка CSV
+            csv_data = st.session_state.kpi_history.to_csv(index=False, encoding='utf-8-sig')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"kpi_data_{timestamp}.csv"
+            
+            st.download_button(
+                label="⬇️ Скачать CSV",
+                data=csv_data,
+                file_name=filename,
+                mime='text/csv',
+                key='download_csv_button'
+            )
