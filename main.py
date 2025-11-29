@@ -6,6 +6,14 @@ import numpy as np
 import pickle
 import os
 
+import sys
+import os
+
+# Ensure current directory is in path for module imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
 # Импорт модулей мониторинга кампаний
 try:
     from modules.campaign_data import load_campaigns, save_campaigns
@@ -24,6 +32,7 @@ try:
     CAMPAIGNS_MODULE_AVAILABLE = True
 except ImportError as e:
     CAMPAIGNS_MODULE_AVAILABLE = False
+    CAMPAIGNS_ERROR = str(e)
     print(f"Campaign modules not available: {e}")
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
@@ -949,7 +958,8 @@ elif menu == "Мониторинг Кампаний":
     st.title("🎯 Мониторинг Фандрайзинговых Кампаний")
     
     if not CAMPAIGNS_MODULE_AVAILABLE:
-        st.error("❌ Модули мониторинга кампаний недоступны. Проверьте установку.")
+        st.error(f"❌ Модули мониторинга кампаний недоступны. Ошибка: {CAMPAIGNS_ERROR}")
+        st.info("Попробуйте перезапустить приложение или проверить установку зависимостей (plotly).")
     else:
         # Инициализация данных кампаний в session_state
         if 'campaigns_data' not in st.session_state:
