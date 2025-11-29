@@ -78,6 +78,7 @@ def render_campaign_input_form() -> None:
             if "Существующая" in group_mode:
                 if existing_groups:
                     group_id = st.selectbox("Выберите группу", existing_groups)
+                    st.success(f"✅ Выбрана группа: **{group_id}**")
                 else:
                     st.warning("Нет созданных групп. Выберите 'Новая' для создания.")
             elif group_mode == "Новая":
