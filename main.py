@@ -6,6 +6,25 @@ import numpy as np
 import pickle
 import os
 
+# Импорт модулей мониторинга кампаний
+try:
+    from modules.campaign_data import load_campaigns, save_campaigns
+    from modules.campaign_analytics import compare_channels
+    from modules.campaign_viz import (
+        render_campaign_summary_table,
+        render_channel_comparison
+    )
+    from modules.campaign_ui import (
+        render_campaign_input_form,
+        render_campaign_editor,
+        render_campaign_detail_view,
+        export_campaign_report
+    )
+    CAMPAIGNS_MODULE_AVAILABLE = True
+except ImportError as e:
+    CAMPAIGNS_MODULE_AVAILABLE = False
+    print(f"Campaign modules not available: {e}")
+
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
 st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.17 (ИСПРАВЛЕНА ПОТЕРЯ ДАННЫХ)", layout="wide")
 
@@ -475,7 +494,7 @@ with st.sidebar:
     st.header("Навигация")
     menu = st.selectbox(
         "Выберите раздел:",
-        ["Сводный Дашборд", "Динамика Сборов", "SMM Эффективность", "Корпоративный Фандрайзинг", "Ввод данных KPI", "История (Редактор)"]
+        ["Сводный Дашборд", "Динамика Сборов", "SMM Эффективность", "Корпоративный Фандрайзинг", "Мониторинг Кампаний", "Ввод данных KPI", "История (Редактор)"]
     )
     
     st.divider()
@@ -922,6 +941,193 @@ elif menu == "Корпоративный Фандрайзинг":
                 st.plotly_chart(render_chart(df_cf_viz, "Количество партнеров в работе"), use_container_width=True, key="cf_act_pipeline")
             
             st.plotly_chart(render_chart(df_cf_viz, "Скорость конверсии (дни)"), use_container_width=True, key="cf_act_conversion_speed")
+
+
+# --- 2.2 МОНИТОРИНГ КАМПАНИЙ ---
+elif menu == "Мониторинг Кампаний":
+    st.title("🎯 Мониторинг Фандрайзинговых Кампаний")
+    
+    if not CAMPAIGNS_MODULE_AVAILABLE:
+        st.error("❌ Модули мониторинга кампаний недоступны. Проверьте установку.")
+    else:
+        # Инициализация данных кампаний в session_state
+        if 'campaigns_data' not in st.session_state:
+            st.session_state.campaigns_data = load_campaigns()
+        
+        # Вкладки
+        campaign_tabs = st.tabs(["📊 Сводка", "🔍 Детали", "➕ Новая кампания", "📈 Сравнение каналов", "✏️ Редактор"])
+        
+        # --- Вкладка 1: Сводка ---
+        with campaign_tabs[0]:
+            st.subheader("Общая сводка всех кампаний")
+            
+            campaigns_df = load_campaigns()
+            
+            if not campaigns_df.empty:
+                # Фильтры
+                filter_col1, filter_col2 = st.columns(2)
+                
+                with filter_col1:
+                    filter_status = st.multiselect(
+                        "Фильтр по статусу",
+                        options=["active", "completed", "paused"],
+                        default=["active"],
+                        format_func=lambda x: {"active": "🟢 Активна", "completed": "✅ Завершена", "paused": "⏸️ Приостановлена"}[x]
+                    )
+                
+                with filter_col2:
+                    filter_channel = st.multiselect(
+                        "Фильтр по каналу",
+                        options=campaigns_df['channel'].unique().tolist(),
+                        default=campaigns_df['channel'].unique().tolist()
+                    )
+                
+                # Применяем фильтры
+                filtered_df = campaigns_df[
+                    (campaigns_df['status'].isin(filter_status)) &
+                    (campaigns_df['channel'].isin(filter_channel))
+                ]
+                
+                st.divider()
+                
+                # Сводная таблица
+                render_campaign_summary_table(filtered_df)
+                
+                # Общая статистика
+                st.divider()
+                st.subheader("📈 Общая статистика")
+                
+                stat1, stat2, stat3, stat4 = st.columns(4)
+                
+                with stat1:
+                    total_campaigns = len(filtered_df)
+                    st.metric("Всего кампаний", total_campaigns)
+                
+                with stat2:
+                    total_collected = filtered_df['collected_amount'].sum()
+                    st.metric("Всего собрано", f"{total_collected:,.0f} ₽")
+                
+                with stat3:
+                    total_target = filtered_df['target_amount'].sum()
+                    st.metric("Общая цель", f"{total_target:,.0f} ₽")
+                
+                with stat4:
+                    overall_progress = (total_collected / total_target * 100) if total_target > 0 else 0
+                    st.metric("Общий прогресс", f"{overall_progress:.1f}%")
+            else:
+                st.info("📭 Нет кампаний. Создайте первую кампанию на вкладке 'Новая кампания'.")
+        
+        # --- Вкладка 2: Детали ---
+        with campaign_tabs[1]:
+            st.subheader("Детальная аналитика кампании")
+            
+            campaigns_df = load_campaigns()
+            
+            if not campaigns_df.empty:
+                # Выбор кампании
+                campaign_options = {
+                    row['campaign_id']: f"{row['name']} ({row['channel']})"
+                    for _, row in campaigns_df.iterrows()
+                }
+                
+                selected_id = st.selectbox(
+                    "Выберите кампанию для детального просмотра:",
+                    options=list(campaign_options.keys()),
+                    format_func=lambda x: campaign_options[x]
+                )
+                
+                if selected_id:
+                    st.divider()
+                    render_campaign_detail_view(selected_id)
+                    
+                    # Экспорт отчета
+                    st.divider()
+                    st.subheader("📥 Экспорт отчета")
+                    
+                    export_col1, export_col2 = st.columns([2, 1])
+                    
+                    with export_col1:
+                        st.markdown("Скачайте детальный отчет по кампании для ЕОС или архива.")
+                    
+                    with export_col2:
+                        export_format = st.radio("Формат:", ["CSV", "Excel"], horizontal=True)
+                        
+                        if st.button("⬇️ Скачать отчет", key="download_campaign_report"):
+                            report_data = export_campaign_report(
+                                selected_id,
+                                format='csv' if export_format == 'CSV' else 'excel'
+                            )
+                            
+                            if report_data:
+                                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                                filename = f"campaign_report_{selected_id}_{timestamp}.{'csv' if export_format == 'CSV' else 'xlsx'}"
+                                mime_type = 'text/csv' if export_format == 'CSV' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                                
+                                st.download_button(
+                                    label=f"💾 {filename}",
+                                    data=report_data,
+                                    file_name=filename,
+                                    mime=mime_type
+                                )
+            else:
+                st.info("📭 Нет кампаний для просмотра.")
+        
+        # --- Вкладка 3: Новая кампания ---
+        with campaign_tabs[2]:
+            render_campaign_input_form()
+        
+        # --- Вкладка 4: Сравнение каналов ---
+        with campaign_tabs[3]:
+            st.subheader("📊 Сравнительный анализ каналов")
+            
+            campaigns_df = load_campaigns()
+            
+            if not campaigns_df.empty:
+                # График сравнения
+                st.plotly_chart(render_channel_comparison(campaigns_df), use_container_width=True)
+                
+                st.divider()
+                
+                # Детальная таблица
+                st.subheader("Детализация по каналам")
+                
+                channels_data = compare_channels(campaigns_df)
+                
+                if not channels_data.empty:
+                    # Форматирование для отображения
+                    display_df = channels_data.copy()
+                    display_df['total_collected'] = display_df['total_collected'].apply(lambda x: f"{x:,.0f} ₽")
+                    display_df['total_costs'] = display_df['total_costs'].apply(lambda x: f"{x:,.0f} ₽")
+                    display_df['avg_roi'] = display_df['avg_roi'].apply(lambda x: f"{x:.1f}%")
+                    display_df['avg_cof'] = display_df['avg_cof'].apply(lambda x: f"{x:.2f}")
+                    display_df['avg_ctr'] = display_df['avg_ctr'].apply(lambda x: f"{x:.2f}%")
+                    display_df['avg_dcr'] = display_df['avg_dcr'].apply(lambda x: f"{x:.2f}%")
+                    display_df['avg_donation'] = display_df['avg_donation'].apply(lambda x: f"{x:,.0f} ₽")
+                    
+                    display_df.columns = [
+                        'Канал', 'Кампаний', 'Собрано', 'Затраты',
+                        'ROI', 'CoF', 'CTR', 'DCR', 'Доноров', 'Ср. донат'
+                    ]
+                    
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    
+                    # Рекомендации
+                    st.divider()
+                    st.subheader("💡 Рекомендации по каналам")
+                    
+                    best_roi_channel = channels_data.loc[channels_data['avg_roi'].idxmax(), 'channel']
+                    best_ctr_channel = channels_data.loc[channels_data['avg_ctr'].idxmax(), 'channel']
+                    best_dcr_channel = channels_data.loc[channels_data['avg_dcr'].idxmax(), 'channel']
+                    
+                    st.success(f"✅ **Лучший ROI:** {best_roi_channel}")
+                    st.info(f"🎯 **Лучший CTR:** {best_ctr_channel}")
+                    st.info(f"💎 **Лучший DCR:** {best_dcr_channel}")
+            else:
+                st.info("📭 Нет данных для сравнения. Создайте хотя бы одну кампанию.")
+        
+        # --- Вкладка 5: Редактор ---
+        with campaign_tabs[4]:
+            render_campaign_editor()
 
 
 # --- 3. ВВОД ДАННЫХ KPI ---
