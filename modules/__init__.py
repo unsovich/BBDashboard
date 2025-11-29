@@ -37,7 +37,8 @@ from .campaign_ui import (
     render_campaign_editor,
     render_campaign_detail_view,
     export_campaign_report,
-    render_collection_update_form
+    render_collection_update_form,
+    render_multi_channel_dashboard
 )
 
 __all__ = [
@@ -71,4 +72,5 @@ __all__ = [
     'render_campaign_detail_view',
     'export_campaign_report',
     'render_collection_update_form',
+    'render_multi_channel_dashboard',
 ]

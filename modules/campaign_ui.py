@@ -14,6 +14,7 @@ from .campaign_data import (
     update_campaign,
     get_campaign_by_id,
     load_campaigns,
+    get_campaign_groups,
     add_collection_update,
     get_collection_history,
     get_collection_summary
@@ -66,6 +67,19 @@ def render_campaign_input_form() -> None:
                 CHANNELS,
                 help="Основной канал привлечения доноров"
             )
+            
+            # Группа кампаний
+            existing_groups = get_campaign_groups()
+            group_mode = st.radio("Группа", ["Без группы", "Существующая", "Новая"], horizontal=True, label_visibility="collapsed")
+            
+            group_id = None
+            if group_mode == "Существующая" and existing_groups:
+                group_id = st.selectbox("Выберите группу", existing_groups)
+            elif group_mode == "Новая":
+                group_id = st.text_input("Название новой группы", placeholder="Например: Новый год 2025")
+            
+            if group_mode == "Без группы":
+                group_id = None
         
         with col2:
             # Даты
@@ -211,6 +225,7 @@ def render_campaign_input_form() -> None:
             result = add_campaign(
                 name=name,
                 channel=channel,
+                group_id=group_id,
                 start_date=start_date,
                 end_date=end_date,
                 target_amount=target_amount,
@@ -249,6 +264,7 @@ def render_campaign_editor() -> None:
     # Конфигурация колонок
     column_config = {
         'campaign_id': st.column_config.TextColumn('ID', disabled=True, width='small'),
+        'group_id': st.column_config.TextColumn('Группа', width='medium'),
         'name': st.column_config.TextColumn('Название', width='medium'),
         'channel': st.column_config.SelectboxColumn('Канал', options=CHANNELS, width='small'),
         'start_date': st.column_config.DateColumn('Старт', format='DD.MM.YYYY'),
@@ -689,4 +705,113 @@ def render_collection_update_form() -> None:
         )
     else:
         st.info("📭 История обновлений пуста. Добавьте первое поступление выше.")
+
+
+def render_multi_channel_dashboard() -> None:
+    """
+    Дашборд мультиканальности (анализ по группам)
+    """
+    st.subheader("🌐 Мультиканальная аналитика")
+    st.markdown("Анализ эффективности групп кампаний, запущенных в разных каналах.")
+    
+    campaigns_df = load_campaigns()
+    
+    if campaigns_df.empty:
+        st.info("📭 Нет данных.")
+        return
+        
+    if 'group_id' not in campaigns_df.columns:
+        st.info("📭 Нет данных о группах. Отредактируйте кампании и добавьте им группу.")
+        return
+        
+    groups = campaigns_df['group_id'].dropna().unique().tolist()
+    
+    if not groups:
+        st.info("📭 Нет созданных групп. Добавьте группу при создании или редактировании кампании.")
+        return
+        
+    # Выбор группы
+    selected_group = st.selectbox("Выберите группу кампаний:", groups)
+    
+    if selected_group:
+        # Фильтруем кампании группы
+        group_df = campaigns_df[campaigns_df['group_id'] == selected_group]
+        
+        st.divider()
+        
+        # Агрегированные метрики
+        total_collected = group_df['collected_amount'].sum()
+        total_target = group_df['target_amount'].sum()
+        total_costs = group_df['ad_costs'].sum() + (group_df['labor_hours'] * group_df['hourly_rate']).sum()
+        
+        # Средние метрики (взвешенные или простые)
+        avg_roi = ((total_collected - total_costs) / total_costs * 100) if total_costs > 0 else 0
+        avg_cof = (total_costs / total_collected) if total_collected > 0 else 0
+        
+        # Отображение KPI группы
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        
+        with kpi1:
+            st.metric("Всего собрано", f"{total_collected:,.0f} ₽")
+        with kpi2:
+            progress = (total_collected / total_target * 100) if total_target > 0 else 0
+            st.metric("Общий прогресс", f"{progress:.1f}%")
+        with kpi3:
+            delta_color = "normal" if avg_roi >= 250 else "inverse"
+            st.metric("Общий ROI", f"{avg_roi:.1f}%", delta=f"{avg_roi - 250:.1f}%")
+        with kpi4:
+            st.metric("Общий CoF", f"{avg_cof:.2f}")
+            
+        st.divider()
+        
+        # Сравнение каналов внутри группы
+        st.subheader("📊 Вклад каналов в результат")
+        
+        import plotly.express as px
+        
+        col_chart1, col_chart2 = st.columns(2)
+        
+        with col_chart1:
+            # Pie chart сборов
+            fig_pie = px.pie(
+                group_df, 
+                values='collected_amount', 
+                names='channel', 
+                title='Доля сборов по каналам',
+                hole=0.4
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+        with col_chart2:
+            # Bar chart ROI
+            # Рассчитываем ROI для каждой кампании
+            group_df['total_costs'] = group_df['ad_costs'] + (group_df['labor_hours'] * group_df['hourly_rate'])
+            group_df['roi'] = group_df.apply(
+                lambda x: ((x['collected_amount'] - x['total_costs']) / x['total_costs'] * 100) if x['total_costs'] > 0 else 0, 
+                axis=1
+            )
+            
+            fig_bar = px.bar(
+                group_df,
+                x='channel',
+                y='roi',
+                title='ROI по каналам',
+                color='roi',
+                color_continuous_scale='RdYlGn',
+                text_auto='.1f'
+            )
+            # Линия отсечения 250%
+            fig_bar.add_hline(y=250, line_dash="dash", line_color="red", annotation_text="Target 250%")
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+        # Детальная таблица
+        st.subheader("📋 Детализация")
+        
+        display_df = group_df[['name', 'channel', 'collected_amount', 'target_amount', 'roi', 'status']].copy()
+        display_df['collected_amount'] = display_df['collected_amount'].apply(lambda x: f"{x:,.0f} ₽")
+        display_df['target_amount'] = display_df['target_amount'].apply(lambda x: f"{x:,.0f} ₽")
+        display_df['roi'] = display_df['roi'].apply(lambda x: f"{x:.1f}%")
+        
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
 

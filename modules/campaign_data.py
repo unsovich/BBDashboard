@@ -26,6 +26,7 @@ def create_empty_campaigns_df() -> pd.DataFrame:
     """Создает пустой DataFrame для кампаний с правильной структурой"""
     return pd.DataFrame(columns=[
         'campaign_id',           # Уникальный ID
+        'group_id',              # ID группы (для мультиканальности)
         'name',                  # Название кампании
         'channel',               # Канал (VK, Telegram, Email, Website)
         'start_date',            # Дата старта
@@ -88,6 +89,7 @@ def add_campaign(
     start_date: date,
     end_date: date,
     target_amount: float,
+    group_id: str = None,
     collected_amount: float = 0.0,
     ad_costs: float = 0.0,
     labor_hours: float = 0.0,
@@ -111,6 +113,7 @@ def add_campaign(
         
         new_campaign = {
             'campaign_id': campaign_id,
+            'group_id': group_id,
             'name': name,
             'channel': channel,
             'start_date': start_date,
@@ -263,6 +266,14 @@ def get_campaigns_by_date_range(start_date: date, end_date: date) -> pd.DataFram
     mask = (df['start_date_dt'] <= end_dt) & (df['end_date_dt'] >= start_dt)
     
     return df[mask].drop(columns=['start_date_dt', 'end_date_dt'])
+
+
+def get_campaign_groups() -> List[str]:
+    """Возвращает список уникальных групп кампаний"""
+    df = load_campaigns()
+    if 'group_id' not in df.columns:
+        return []
+    return df['group_id'].dropna().unique().tolist()
 
 
 # --- ИСТОРИЯ СБОРОВ ---
