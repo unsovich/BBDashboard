@@ -70,15 +70,20 @@ def render_campaign_input_form() -> None:
             
             # Группа кампаний
             existing_groups = get_campaign_groups()
-            group_mode = st.radio("Группа", ["Без группы", "Существующая", "Новая"], horizontal=True, label_visibility="collapsed")
+            
+            options = ["Без группы", f"Существующая ({len(existing_groups)})", "Новая"]
+            group_mode = st.radio("Группа", options, horizontal=True, label_visibility="collapsed")
             
             group_id = None
-            if group_mode == "Существующая" and existing_groups:
-                group_id = st.selectbox("Выберите группу", existing_groups)
+            if "Существующая" in group_mode:
+                if existing_groups:
+                    group_id = st.selectbox("Выберите группу", existing_groups)
+                else:
+                    st.warning("Нет созданных групп. Выберите 'Новая' для создания.")
             elif group_mode == "Новая":
                 group_id = st.text_input("Название новой группы", placeholder="Например: Новый год 2025")
             
-            if group_mode == "Без группы":
+            if "Без группы" in group_mode:
                 group_id = None
         
         with col2:

@@ -273,7 +273,9 @@ def get_campaign_groups() -> List[str]:
     df = load_campaigns()
     if 'group_id' not in df.columns:
         return []
-    return df['group_id'].dropna().unique().tolist()
+    groups = df['group_id'].dropna().unique().tolist()
+    # print(f"DEBUG: Found groups: {groups}") 
+    return groups
 
 
 # --- ИСТОРИЯ СБОРОВ ---
