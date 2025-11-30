@@ -41,6 +41,20 @@ from .campaign_ui import (
     render_multi_channel_dashboard
 )
 
+from .program_financials import (
+    load_financials,
+    save_financials,
+    add_financial_record,
+    get_financial_record,
+    get_latest_financial_record,
+    get_financial_data_with_fallback,
+    get_program_history,
+    delete_financial_record,
+    get_aggregated_financials,
+    calculate_profitability,
+    PROGRAMS
+)
+
 __all__ = [
     # Data
     'load_campaigns',

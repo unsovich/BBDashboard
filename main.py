@@ -36,6 +36,25 @@ except ImportError as e:
     CAMPAIGNS_ERROR = str(e)
     print(f"Campaign modules not available: {e}")
 
+# Импорт модуля финансов программ
+try:
+    from modules.program_financials import (
+        load_financials,
+        save_financials,
+        add_financial_record,
+        get_financial_data_with_fallback,
+        get_program_history,
+        get_aggregated_financials,
+        calculate_profitability,
+        PROGRAMS
+    )
+    FINANCIALS_MODULE_AVAILABLE = True
+except ImportError as e:
+    FINANCIALS_MODULE_AVAILABLE = False
+    FINANCIALS_ERROR = str(e)
+    print(f"Program financials module not available: {e}")
+
+
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
 st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.17 (ИСПРАВЛЕНА ПОТЕРЯ ДАННЫХ)", layout="wide")
 
@@ -53,21 +72,53 @@ KPI_STRUCTURE = {
         "SMM.DCR": "DCR (Конверсия в донат), %",
         "SMM.MONEY": "Сумма сбора SMM, руб. (Часть KPI.ФР.1)"
     },
-    "Верь в себя (Процессы)": {
-        "KPI.ВС.PROC.1": "Количество проведенных занятий (факт/план)",
-        "KPI.ВС.PROC.2": "Количество обслуженных благополучателей",
-        "KPI.ВС.PROC.3": "Коэффициент конверсии обращений",
-        "KPI.ВС.PROC.4": "Уровень удержания благополучателей"
+    "Верь в себя - Краснодар (Процессы)": {
+        "KPI.ВС.КРАСНОДАР.PROC.1": "Количество проведенных занятий (факт/план)",
+        "KPI.ВС.КРАСНОДАР.PROC.2": "Количество обслуженных благополучателей",
+        "KPI.ВС.КРАСНОДАР.PROC.3": "Коэффициент конверсии обращений",
+        "KPI.ВС.КРАСНОДАР.PROC.4": "Уровень удержания благополучателей"
     },
-    "Верь в себя (Соц. воздействие)": {
-        "KPI.ВС.SOC.1": "Индекс достижения социальной реабилитации",
-        "KPI.ВС.SOC.2": "Количество благополучателей, прошедших профориентацию",
-        "KPI.ВС.SOC.3": "Уровень удовлетворенности благополучателей"
+    "Верь в себя - Краснодар (Соц. воздействие)": {
+        "KPI.ВС.КРАСНОДАР.SOC.1": "Индекс достижения социальной реабилитации",
+        "KPI.ВС.КРАСНОДАР.SOC.2": "Количество благополучателей, прошедших профориентацию",
+        "KPI.ВС.КРАСНОДАР.SOC.3": "Уровень удовлетворенности благополучателей"
     },
-    "Верь в себя (Финансы)": {
-        "KPI.ВС.FIN.1": "Стоимость оказания услуг на 1 благополучателя",
-        "KPI.ВС.FIN.2": "Отклонение от сметы",
-        "KPI.ВС.FIN.3": "Коэффициент привлечения натуральной помощи"
+    "Верь в себя - Краснодар (Финансы)": {
+        "KPI.ВС.КРАСНОДАР.FIN.1": "Стоимость оказания услуг на 1 благополучателя",
+        "KPI.ВС.КРАСНОДАР.FIN.2": "Отклонение от сметы",
+        "KPI.ВС.КРАСНОДАР.FIN.3": "Коэффициент привлечения натуральной помощи"
+    },
+    "Верь в себя - Крымск (Процессы)": {
+        "KPI.ВС.КРЫМСК.PROC.1": "Количество проведенных занятий (факт/план)",
+        "KPI.ВС.КРЫМСК.PROC.2": "Количество обслуженных благополучателей",
+        "KPI.ВС.КРЫМСК.PROC.3": "Коэффициент конверсии обращений",
+        "KPI.ВС.КРЫМСК.PROC.4": "Уровень удержания благополучателей"
+    },
+    "Верь в себя - Крымск (Соц. воздействие)": {
+        "KPI.ВС.КРЫМСК.SOC.1": "Индекс достижения социальной реабилитации",
+        "KPI.ВС.КРЫМСК.SOC.2": "Количество благополучателей, прошедших профориентацию",
+        "KPI.ВС.КРЫМСК.SOC.3": "Уровень удовлетворенности благополучателей"
+    },
+    "Верь в себя - Крымск (Финансы)": {
+        "KPI.ВС.КРЫМСК.FIN.1": "Стоимость оказания услуг на 1 благополучателя",
+        "KPI.ВС.КРЫМСК.FIN.2": "Отклонение от сметы",
+        "KPI.ВС.КРЫМСК.FIN.3": "Коэффициент привлечения натуральной помощи"
+    },
+    "Верь в себя - Общие (Процессы)": {
+        "KPI.ВС.ОБЩИЕ.PROC.1": "Количество проведенных занятий (факт/план)",
+        "KPI.ВС.ОБЩИЕ.PROC.2": "Количество обслуженных благополучателей",
+        "KPI.ВС.ОБЩИЕ.PROC.3": "Коэффициент конверсии обращений",
+        "KPI.ВС.ОБЩИЕ.PROC.4": "Уровень удержания благополучателей"
+    },
+    "Верь в себя - Общие (Соц. воздействие)": {
+        "KPI.ВС.ОБЩИЕ.SOC.1": "Индекс достижения социальной реабилитации",
+        "KPI.ВС.ОБЩИЕ.SOC.2": "Количество благополучателей, прошедших профориентацию",
+        "KPI.ВС.ОБЩИЕ.SOC.3": "Уровень удовлетворенности благополучателей"
+    },
+    "Верь в себя - Общие (Финансы)": {
+        "KPI.ВС.ОБЩИЕ.FIN.1": "Стоимость оказания услуг на 1 благополучателя",
+        "KPI.ВС.ОБЩИЕ.FIN.2": "Отклонение от сметы",
+        "KPI.ВС.ОБЩИЕ.FIN.3": "Коэффициент привлечения натуральной помощи"
     },
     "Нужна помощь (Процессы)": {
         "KPI.НП.PROC.1": "Коэффициент своевременности рассмотрения заявок",
@@ -353,6 +404,116 @@ if 'kpi_history' not in st.session_state:
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
+def aggregate_center_kpis(df, start_date, end_date):
+    """
+    Агрегирует KPI из центров Краснодар и Крымск в общие показатели.
+    Суммирует количественные показатели, усредняет коэффициенты и индексы.
+    
+    Args:
+        df: DataFrame с KPI данными
+        start_date: начало периода
+        end_date: конец периода
+    
+    Returns:
+        DataFrame с агрегированными данными для категорий "Верь в себя - Общие"
+    """
+    # Фильтруем данные за период
+    df = df.copy()
+    df['Дата_Начала_DT'] = pd.to_datetime(df['Дата_Начала'], errors='coerce')
+    mask = (df['Дата_Начала_DT'].dt.date >= start_date) & (df['Дата_Начала_DT'].dt.date <= end_date)
+    df_period = df.loc[mask]
+    
+    if df_period.empty:
+        return pd.DataFrame()
+    
+    # Получаем данные по центрам
+    krasnodar_data = df_period[df_period['Категория'].str.contains('Краснодар', na=False)]
+    krymsk_data = df_period[df_period['Категория'].str.contains('Крымск', na=False)]
+    
+    aggregated_records = []
+    
+    # Маппинг KPI для агрегации
+    kpi_mappings = {
+        'PROC.1': ('Количество проведенных занятий (факт/план)', 'sum'),
+        'PROC.2': ('Количество обслуженных благополучателей', 'sum'),
+        'PROC.3': ('Коэффициент конверсии обращений', 'mean'),
+        'PROC.4': ('Уровень удержания благополучателей', 'mean'),
+        'SOC.1': ('Индекс достижения социальной реабилитации', 'mean'),
+        'SOC.2': ('Количество благополучателей, прошедших профориентацию', 'sum'),
+        'SOC.3': ('Уровень удовлетворенности благополучателей', 'mean'),
+        'FIN.1': ('Стоимость оказания услуг на 1 благополучателя', 'mean'),
+        'FIN.2': ('Отклонение от сметы', 'mean'),
+        'FIN.3': ('Коэффициент привлечения натуральной помощи', 'mean'),
+    }
+    
+    # Группируем по датам
+    unique_dates = pd.concat([
+        krasnodar_data['Дата_Начала'],
+        krymsk_data['Дата_Начала']
+    ]).unique()
+    
+    for date_val in unique_dates:
+        kras_date_data = krasnodar_data[krasnodar_data['Дата_Начала'] == date_val]
+        krym_date_data = krymsk_data[krymsk_data['Дата_Начала'] == date_val]
+        
+        # Агрегируем каждый KPI
+        for kpi_suffix, (kpi_name, agg_type) in kpi_mappings.items():
+            kras_kpi = kras_date_data[kras_date_data['KPI_ID'].str.endswith(kpi_suffix)]
+            krym_kpi = krym_date_data[krym_date_data['KPI_ID'].str.endswith(kpi_suffix)]
+            
+            if not kras_kpi.empty or not krym_kpi.empty:
+                # Вычисляем агрегированное значение
+                if agg_type == 'sum':
+                    fact_val = kras_kpi['Факт'].sum() + krym_kpi['Факт'].sum()
+                    min_val = kras_kpi['Минимум'].sum() + krym_kpi['Минимум'].sum()
+                    target_val = kras_kpi['Цель'].sum() + krym_kpi['Цель'].sum()
+                else:  # mean
+                    values = pd.concat([kras_kpi['Факт'], krym_kpi['Факт']])
+                    fact_val = values.mean() if not values.empty else 0
+                    
+                    min_values = pd.concat([kras_kpi['Минимум'], krym_kpi['Минимум']])
+                    min_val = min_values.mean() if not min_values.empty else 0
+                    
+                    target_values = pd.concat([kras_kpi['Цель'], krym_kpi['Цель']])
+                    target_val = target_values.mean() if not target_values.empty else 0
+                
+                # Определяем категорию
+                if 'PROC' in kpi_suffix:
+                    category = "Верь в себя - Общие (Процессы)"
+                elif 'SOC' in kpi_suffix:
+                    category = "Верь в себя - Общие (Соц. воздействие)"
+                else:
+                    category = "Верь в себя - Общие (Финансы)"
+                
+                # Получаем информацию о неделе и промежутке дат
+                if not kras_kpi.empty:
+                    week_id = kras_kpi.iloc[0]['Неделя_Год']
+                    date_range = kras_kpi.iloc[0]['Промежуток_Дат']
+                    date_end = kras_kpi.iloc[0].get('Дата_Окончания', date_val)
+                elif not krym_kpi.empty:
+                    week_id = krym_kpi.iloc[0]['Неделя_Год']
+                    date_range = krym_kpi.iloc[0]['Промежуток_Дат']
+                    date_end = krym_kpi.iloc[0].get('Дата_Окончания', date_val)
+                else:
+                    continue
+                
+                aggregated_records.append({
+                    'Дата_Начала': date_val,
+                    'Дата_Окончания': date_end,
+                    'Неделя_Год': week_id,
+                    'Промежуток_Дат': date_range,
+                    'Категория': category,
+                    'KPI_ID': f'KPI.ВС.ОБЩИЕ.{kpi_suffix}',
+                    'Название': kpi_name,
+                    'Минимум': round(min_val, 2),
+                    'Цель': round(target_val, 2),
+                    'Факт': round(fact_val, 2),
+                    'Комментарий': 'Агрегированные данные'
+                })
+    
+    return pd.DataFrame(aggregated_records)
+
+
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 def get_aggregation_type(kpi_name):
@@ -449,6 +610,59 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     return df_grouped[['Название', 'Минимум', 'Цель', 'Факт', 'Период']]
 
 
+def render_program_financials(program_name, end_date):
+    """
+    Отображает финансовые показатели программы за месяц
+    - Определяет месяц из end_date
+    - Показывает доходы, расходы, окупаемость
+    - Если данных нет, показывает уведомление и последние доступные данные
+    
+    Args:
+        program_name: название программы (например, "Верь в себя - Краснодар")
+        end_date: дата окончания отчетного периода
+    """
+    if not FINANCIALS_MODULE_AVAILABLE:
+        st.warning("⚠️ Модуль финансов недоступен")
+        return
+    
+    # Определяем месяц и год из end_date
+    target_year = end_date.year
+    target_month = end_date.month
+    
+    # Получаем данные с fallback
+    data = get_financial_data_with_fallback(program_name, target_year, target_month)
+    
+    # Показываем предупреждение, если данных нет
+    if data['warning']:
+        st.warning(f"⚠️ {data['warning']}")
+    
+    # Отображаем метрики
+    col1, col2, col3 = st.columns(3)
+    
+    month_names = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн",
+                  "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
+    
+    with col1:
+        st.metric(
+            f"Доходы ({month_names[data['month']-1]} {data['year']})",
+            f"{data['income']:,.0f} ₽"
+        )
+    
+    with col2:
+        st.metric(
+            "Расходы",
+            f"{data['expenses']:,.0f} ₽"
+        )
+    
+    with col3:
+        profitability_val = data['profitability']
+        st.metric(
+            "Окупаемость",
+            f"{profitability_val:.1f}%",
+            delta="Прибыль" if profitability_val > 0 else ("Убыток" if profitability_val < 0 else None)
+        )
+
+
 def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
     chart_data = df_grouped[df_grouped['Название'] == kpi_name]
 
@@ -505,7 +719,7 @@ with st.sidebar:
     st.header("Навигация")
     menu = st.selectbox(
         "Выберите раздел:",
-        ["Сводный Дашборд", "Динамика Сборов", "SMM Эффективность", "Корпоративный Фандрайзинг", "Мониторинг Кампаний", "Ввод данных KPI", "История (Редактор)"]
+        ["Сводный Дашборд", "Динамика Сборов", "SMM Эффективность", "Корпоративный Фандрайзинг", "Мониторинг Кампаний", "Финансы программ", "Ввод данных KPI", "История (Редактор)"]
     )
     
     st.divider()
@@ -580,18 +794,122 @@ if menu == "Сводный Дашборд":
         st.divider()
         st.subheader("Программы")
         
+        # Агрегируем данные по центрам перед отображением
+        aggregated_data = aggregate_center_kpis(df_source, start_date, end_date)
+        
+        # Объединяем исходные данные с агрегированными
+        if not aggregated_data.empty:
+            df_source_with_agg = pd.concat([df_source, aggregated_data], ignore_index=True)
+            df_viz_all = filter_data_by_period(df_source_with_agg, start_date, end_date, granularity)
+        else:
+            df_viz_all = df_viz
+        
         prog_tabs = st.tabs(["Верь в себя", "Нужна помощь", "ЯЖивой"])
         
+        # --- "Верь в себя" с подвкладками по центрам ---
         with prog_tabs[0]:
-            c_vs1, c_vs2 = st.columns(2)
-            with c_vs1:
-                st.plotly_chart(render_chart(df_viz, "Количество проведенных занятий (факт/план)"), use_container_width=True, key="chart_vs_classes")
-            with c_vs2:
-                st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_vs_beneficiaries")
+            st.markdown("### Центры развития программы \"Верь в себя\"")
             
-            st.plotly_chart(render_chart(df_viz, "Индекс достижения социальной реабилитации"), use_container_width=True, key="chart_vs_social_rehab")
+            center_tabs = st.tabs(["Краснодар", "Крымск", "Общие"])
+            
+            # Краснодар
+            with center_tabs[0]:
+                st.markdown("#### Центр развития: Краснодар")
+                
+                # Финансовые показатели
+                render_program_financials("Верь в себя - Краснодар", end_date)
+                
+                st.divider()
+                st.markdown("**KPI показатели:**")
+                
+                c_vs_kr1, c_vs_kr2 = st.columns(2)
+                with c_vs_kr1:
+                    st.plotly_chart(render_chart(df_viz_all, "Количество проведенных занятий (факт/план)"), use_container_width=True, key="chart_vs_kr_classes")
+                with c_vs_kr2:
+                    st.plotly_chart(render_chart(df_viz_all, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_vs_kr_beneficiaries")
+                
+                st.plotly_chart(render_chart(df_viz_all, "Индекс достижения социальной реабилитации"), use_container_width=True, key="chart_vs_kr_social_rehab")
+            
+            # Крымск
+            with center_tabs[1]:
+                st.markdown("#### Центр развития: Крымск")
+                
+                # Финансовые показатели
+                render_program_financials("Верь в себя - Крымск", end_date)
+                
+                st.divider()
+                st.markdown("**KPI показатели:**")
+                
+                c_vs_krm1, c_vs_krm2 = st.columns(2)
+                with c_vs_krm1:
+                    st.plotly_chart(render_chart(df_viz_all, "Количество проведенных занятий (факт/план)"), use_container_width=True, key="chart_vs_krm_classes")
+                with c_vs_krm2:
+                    st.plotly_chart(render_chart(df_viz_all, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_vs_krm_beneficiaries")
+                
+                st.plotly_chart(render_chart(df_viz_all, "Индекс достижения социальной реабилитации"), use_container_width=True, key="chart_vs_krm_social_rehab")
+            
+            # Общие (агрегированные)
+            with center_tabs[2]:
+                st.markdown("#### Общие показатели (Краснодар + Крымск)")
+                
+                # Финансовые показатели - агрегированные
+                if FINANCIALS_MODULE_AVAILABLE:
+                    target_year = end_date.year
+                    target_month = end_date.month
+                    
+                    # Получаем агрегированные финансовые данные
+                    agg_financials = get_aggregated_financials(target_year, target_month)
+                    
+                    if 'Верь в себя - Общие' in agg_financials:
+                        total_data = agg_financials['Верь в себя - Общие']
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        month_names = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн",
+                                      "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
+                        
+                        with col1:
+                            st.metric(
+                                f"Доходы ({month_names[target_month-1]} {target_year})",
+                                f"{total_data['income']:,.0f} ₽"
+                            )
+                        
+                        with col2:
+                            st.metric(
+                                "Расходы",
+                                f"{total_data['expenses']:,.0f} ₽"
+                            )
+                        
+                        with col3:
+                            st.metric(
+                                "Окупаемость",
+                                f"{total_data['profitability']:.1f}%",
+                                delta="Прибыль" if total_data['profitability'] > 0 else ("Убыток" if total_data['profitability'] < 0 else None)
+                            )
+                    else:
+                        st.warning("⚠️ Нет финансовых данных по центрам за выбранный период")
+                
+                st.divider()
+                st.markdown("**Агрегированные KPI показатели:**")
+                
+                c_vs_all1, c_vs_all2 = st.columns(2)
+                with c_vs_all1:
+                    st.plotly_chart(render_chart(df_viz_all, "Количество проведенных занятий (факт/план)"), use_container_width=True, key="chart_vs_all_classes")
+                with c_vs_all2:
+                    st.plotly_chart(render_chart(df_viz_all, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_vs_all_beneficiaries")
+                
+                st.plotly_chart(render_chart(df_viz_all, "Индекс достижения социальной реабилитации"), use_container_width=True, key="chart_vs_all_social_rehab")
 
+        # --- "Нужна помощь" ---
         with prog_tabs[1]:
+            st.markdown("### Программа \"Нужна помощь\"")
+            
+            # Финансовые показатели
+            render_program_financials("Нужна помощь", end_date)
+            
+            st.divider()
+            st.markdown("**KPI показатели:**")
+            
             c_np1, c_np2 = st.columns(2)
             with c_np1:
                 st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_np_beneficiaries")
@@ -600,7 +918,16 @@ if menu == "Сводный Дашборд":
             
             st.plotly_chart(render_chart(df_viz, "Коэффициент своевременности рассмотрения заявок"), use_container_width=True, key="chart_np_timeliness")
 
+        # --- "ЯЖивой" ---
         with prog_tabs[2]:
+            st.markdown("### Программа \"ЯЖивой\"")
+            
+            # Финансовые показатели
+            render_program_financials("ЯЖивой", end_date)
+            
+            st.divider()
+            st.markdown("**KPI показатели:**")
+            
             c_yz1, c_yz2 = st.columns(2)
             with c_yz1:
                 st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_yz_beneficiaries")
@@ -1148,6 +1475,204 @@ elif menu == "Мониторинг Кампаний":
         # --- Вкладка 7: Редактор ---
         with campaign_tabs[6]:
             render_campaign_editor()
+
+
+# --- ФИНАНСЫ ПРОГРАММ ---
+elif menu == "Финансы программ":
+    st.title("💰 Финансы программ")
+    
+    if not FINANCIALS_MODULE_AVAILABLE:
+        st.error(f"⚠️ Модуль финансов недоступен: {FINANCIALS_ERROR}")
+    else:
+        st.markdown("""
+        Ввод месячных финансовых данных по программам.
+        **Данные вводятся помесячно** и используются для расчета окупаемости программ.
+        """)
+        
+        tab1, tab2 = st.tabs(["📝 Ввод данных", "📊 История"])
+        
+        # --- Вкладка 1: Ввод данных ---
+        with tab1:
+            st.subheader("Ввод финансовых данных")
+            
+            with st.form("financial_data_form", clear_on_submit=False):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    program = st.selectbox(
+                        "Программа *",
+                        PROGRAMS,
+                        help="Выберите программу для ввода данных"
+                    )
+                
+                with col2:
+                    current_year = datetime.now().year
+                    current_month = datetime.now().month
+                    
+                    col_month, col_year = st.columns(2)
+                    
+                    with col_month:
+                        month = st.selectbox(
+                            "Месяц *",
+                            range(1, 13),
+                            index=current_month - 1,
+                            format_func=lambda x: [
+                                "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+                                "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+                            ][x-1]
+                        )
+                    
+                    with col_year:
+                        year = st.number_input(
+                            "Год *",
+                            min_value=2020,
+                            max_value=2030,
+                            value=current_year,
+                            step=1
+                        )
+                
+                st.divider()
+                
+                col_income, col_expenses = st.columns(2)
+                
+                with col_income:
+                    income = st.number_input(
+                        "Доходы (руб.) *",
+                        min_value=0.0,
+                        value=0.0,
+                        step=1000.0,
+                        format="%.2f",
+                        help="Общие доходы программы за месяц"
+                    )
+                
+                with col_expenses:
+                    expenses = st.number_input(
+                        "Расходы (руб.) *",
+                        min_value=0.0,
+                        value=0.0,
+                        step=1000.0,
+                        format="%.2f",
+                        help="Общие расходы программы за месяц"
+                    )
+                
+                # Расчет окупаемости
+                if expenses > 0:
+                    profitability = calculate_profitability(income, expenses)
+                    
+                    st.info(f"📊 **Расчетная окупаемость:** {profitability:.2f}%")
+                    
+                    if profitability < 0:
+                        st.warning("⚠️ Программа убыточна (расходы превышают доходы)")
+                    elif profitability < 20:
+                        st.warning("⚠️ Низкая окупаемость")
+                    else:
+                        st.success("✅ Хорошая окупаемость")
+                
+                note = st.text_area(
+                    "Примечание",
+                    placeholder="Дополнительная информация о финансовых показателях...",
+                    height=100
+                )
+                
+                submitted = st.form_submit_button("💾 Сохранить данные", use_container_width=True)
+                
+                if submitted:
+                    if income == 0 and expenses == 0:
+                        st.error("❌ Введите хотя бы одно значение (доходы или расходы)")
+                    else:
+                        result = add_financial_record(
+                            program=program,
+                            year=int(year),
+                            month=int(month),
+                            income=income,
+                            expenses=expenses,
+                            note=note
+                        )
+                        
+                        if result['success']:
+                            if result.get('updated'):
+                                st.success(f"✅ {result['message']}")
+                                st.info(f"Новая окупаемость: {result['profitability']:.2f}%")
+                            else:
+                                st.success(f"✅ {result['message']}")
+                                st.success(f"Окупаемость: {result['profitability']:.2f}%")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {result['message']}")
+        
+        # --- Вкладка 2: История ---
+        with tab2:
+            st.subheader("История финансовых данных")
+            
+            # Фильтр по программе
+            filter_program = st.selectbox(
+                "Фильтр по программе:",
+                ["Все программы"] + PROGRAMS,
+                key="history_filter"
+            )
+            
+            # Загружаем историю
+            if filter_program == "Все программы":
+                all_data = load_financials()
+                if not all_data.empty:
+                    # Добавляем вычисляемое поле окупаемости
+                    all_data['profitability'] = all_data.apply(
+                        lambda row: calculate_profitability(row['income'], row['expenses']), 
+                        axis=1
+                    )
+                    all_data = all_data.sort_values(['year', 'month'], ascending=False)
+                history_df = all_data
+            else:
+                history_df = get_program_history(filter_program)
+            
+            if history_df.empty:
+                st.info("📭 Нет данных для отображения")
+            else:
+                # Форматируем для отображения
+                display_df = history_df.copy()
+                
+                # Добавляем название месяца
+                month_names = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+                              "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+                
+                display_df['Месяц'] = display_df['month'].apply(lambda x: month_names[int(x)-1] if 1 <= x <= 12 else str(x))
+                display_df['Год'] = display_df['year'].astype(int)
+                display_df['Программа'] = display_df['program']
+                display_df['Доходы'] = display_df['income'].apply(lambda x: f"{x:,.0f} ₽")
+                display_df['Расходы'] = display_df['expenses'].apply(lambda x: f"{x:,.0f} ₽")
+                display_df['Окупаемость'] = display_df['profitability'].apply(lambda x: f"{x:.2f}%")
+                display_df['Примечание'] = display_df['note'].fillna('')
+                
+                # Выбираем колонки для отображения
+                display_columns = ['Программа', 'Год', 'Месяц', 'Доходы', 'Расходы', 'Окупаемость', 'Примечание']
+                
+                st.dataframe(
+                    display_df[display_columns],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Статистика
+                st.divider()
+                st.subheader("📈 Статистика")
+                
+                stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+                
+                with stat_col1:
+                    total_income = display_df['income'].sum()
+                    st.metric("Общие доходы", f"{total_income:,.0f} ₽")
+                
+                with stat_col2:
+                    total_expenses = display_df['expenses'].sum()
+                    st.metric("Общие расходы", f"{total_expenses:,.0f} ₽")
+                
+                with stat_col3:
+                    total_profit = total_income - total_expenses
+                    st.metric("Прибыль/Убыток", f"{total_profit:,.0f} ₽")
+                
+                with stat_col4:
+                    avg_profitability = display_df['profitability'].mean()
+                    st.metric("Средняя окупаемость", f"{avg_profitability:.2f}%")
 
 
 # --- 3. ВВОД ДАННЫХ KPI ---
