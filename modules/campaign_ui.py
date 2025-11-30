@@ -128,6 +128,12 @@ def render_campaign_input_form() -> None:
                 help="Планируемая дата завершения"
             )
         
+        description = st.text_area(
+            "Описание кампании",
+            placeholder="Краткое описание целей и особенностей кампании",
+            height=100
+        )
+        
         st.divider()
         
         # Финансовые показатели
