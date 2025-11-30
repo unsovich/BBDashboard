@@ -387,14 +387,42 @@ def load_from_file():
 
 
 # --- ИСПРАВЛЕННАЯ ИНИЦИАЛИЗАЦИЯ SESSION STATE ---
+# КРИТИЧЕСКАЯ ЗАЩИТА ОТ ПОТЕРИ ДАННЫХ:
+# 1. Сначала проверяем наличие файла бэкапа
+# 2. Генерируем mock данные ТОЛЬКО если файла НЕТ ВООБЩЕ
+# 3. Если файл есть, но пустой - сохраняем пустой DataFrame (пользователь очистил данные)
+
 if 'kpi_history' not in st.session_state:
     # Пытаемся загрузить из файла
     loaded_data = load_from_file()
-    if loaded_data is not None and not loaded_data.empty:
+    
+    if loaded_data is not None:
+        # Файл существует и загружен успешно
+        # Используем данные из файла даже если они пустые
         st.session_state.kpi_history = loaded_data
+        st.session_state.data_source = "loaded_from_file"
+    elif os.path.exists(BACKUP_FILE):
+        # Файл существует, но не удалось загрузить (поврежден)
+        st.warning(f"⚠️ Файл {BACKUP_FILE} поврежден. Создаем резервную копию и начинаем с пустой базы.")
+        # Переименовываем поврежденный файл
+        backup_corrupted = f"{BACKUP_FILE}.corrupted.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        try:
+            os.rename(BACKUP_FILE, backup_corrupted)
+            st.info(f"Поврежденный файл сохранен как: {backup_corrupted}")
+        except:
+            pass
+        # Начинаем с пустой базы
+        st.session_state.kpi_history = pd.DataFrame(columns=REQUIRED_COLUMNS)
+        save_to_file(st.session_state.kpi_history)
+        st.session_state.data_source = "corrupted_file_recovered"
     else:
+        # Файла НЕ СУЩЕСТВУЕТ - это первый запуск
+        # ТОЛЬКО в этом случае генерируем mock данные
         st.session_state.kpi_history = generate_mock_data()
         save_to_file(st.session_state.kpi_history)
+        st.session_state.data_source = "generated_mock_data"
+        st.info("ℹ️ Первый запуск: создана база с тестовыми данными. Вы можете удалить их в разделе 'История (Редактор)'.")
+    
     st.session_state.data_initialized = True
 
 
@@ -700,12 +728,37 @@ def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
 
 st.sidebar.title("🕊️ Синяя Птица")
 
+# --- ИНФОРМАЦИЯ ОБ ИСТОЧНИКЕ ДАННЫХ ---
+if 'data_source' in st.session_state:
+    source_info = {
+        "loaded_from_file": ("💾", "Данные загружены из файла"),
+        "generated_mock_data": ("🔧", "Тестовые данные (первый запуск)"),
+        "corrupted_file_recovered": ("⚠️", "Восстановлено после ошибки")
+    }
+    icon, message = source_info.get(st.session_state.data_source, ("ℹ️", "Неизвестно"))
+    st.sidebar.info(f"{icon} **Источник данных:**\n{message}")
+
 # --- КНОПКА СБРОСА ДАННЫХ (РЕМОНТ) ---
-if st.sidebar.button("🚨 СБРОСИТЬ ВСЕ ДАННЫЕ (РЕМОНТ)"):
-    # Clear corrupted data and regenerate mock data
-    st.session_state.kpi_history = generate_mock_data()
-    save_to_file(st.session_state.kpi_history)
-    st.rerun()
+with st.sidebar.expander("⚙️ Управление данными", expanded=False):
+    st.markdown("**Внимание:** Эта операция удалит ВСЕ данные!")
+    
+    if st.button("🚨 Очистить всю базу данных", key="reset_all_data"):
+        # Полная очистка - создаем пустую базу
+        st.session_state.kpi_history = pd.DataFrame(columns=REQUIRED_COLUMNS)
+        save_to_file(st.session_state.kpi_history)
+        st.session_state.data_source = "manually_cleared"
+        st.success("✅ База данных очищена")
+        st.rerun()
+    
+    st.divider()
+    
+    if st.button("🔄 Восстановить тестовые данные", key="restore_mock_data"):
+        # Генерируем новые тестовые данные
+        st.session_state.kpi_history = generate_mock_data()
+        save_to_file(st.session_state.kpi_history)
+        st.session_state.data_source = "generated_mock_data"
+        st.success("✅ Тестовые данные восстановлены")
+        st.rerun()
 
 # --- ИНФОРМАЦИЯ О СОХРАНЕНИИ ---
 if os.path.exists(BACKUP_FILE):
