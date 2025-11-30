@@ -67,26 +67,29 @@ def render_campaign_input_form() -> None:
     with col_grp1:
         selected_option = st.selectbox("Выбор группы", group_options, key="group_selector")
     
-    group_id = None
-    
+    # ВАЖНО: Сохраняем в session_state для доступа из формы
     if selected_option == NEW_GROUP_OPTION:
         with col_grp2:
-            group_id = st.text_input(
+            new_group_name = st.text_input(
                 "Введите название группы", 
                 placeholder="Например: Новый год 2025",
                 key="new_group_input"
             )
-        if group_id:
-            st.success(f"✅ Будет создана новая группа: **{group_id}**")
+        if new_group_name:
+            st.session_state['campaign_group_id'] = new_group_name
+            st.success(f"✅ Будет создана новая группа: **{new_group_name}**")
+        else:
+            st.session_state['campaign_group_id'] = None
+            st.warning("⚠️ Введите название группы")
     elif selected_option == NO_GROUP_OPTION:
-        group_id = None
+        st.session_state['campaign_group_id'] = None
         with col_grp2:
             st.info("Кампания будет без группы")
     else:
         # Выбрана существующая группа
-        group_id = selected_option
+        st.session_state['campaign_group_id'] = selected_option
         with col_grp2:
-            st.success(f"✅ Выбрана группа: **{group_id}**")
+            st.success(f"✅ Выбрана группа: **{selected_option}**")
     
     st.divider()
     
@@ -231,6 +234,9 @@ def render_campaign_input_form() -> None:
         submitted = st.form_submit_button("🚀 Создать кампанию", type="primary")
         
         if submitted:
+            # Получаем group_id из session_state
+            group_id = st.session_state.get('campaign_group_id', None)
+            
             # Валидация
             if not name:
                 st.error("⚠️ Укажите название кампании")
