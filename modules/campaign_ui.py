@@ -49,6 +49,48 @@ def render_campaign_input_form() -> None:
     """
     st.subheader("➕ Создание новой кампании")
     
+    # --- ГРУППА КАМПАНИЙ (ВНЕ ФОРМЫ для динамического обновления) ---
+    st.markdown("### Группа кампаний")
+    st.caption("Группа позволяет объединить несколько кампаний для мультиканального анализа")
+    
+    # Получаем существующие группы
+    existing_groups = get_campaign_groups()
+    
+    # Формируем список опций
+    NO_GROUP_OPTION = "— Без группы —"
+    NEW_GROUP_OPTION = "➕ Создать новую..."
+    
+    group_options = [NO_GROUP_OPTION, NEW_GROUP_OPTION] + existing_groups
+    
+    col_grp1, col_grp2 = st.columns([3, 2])
+    
+    with col_grp1:
+        selected_option = st.selectbox("Выбор группы", group_options, key="group_selector")
+    
+    group_id = None
+    
+    if selected_option == NEW_GROUP_OPTION:
+        with col_grp2:
+            group_id = st.text_input(
+                "Введите название группы", 
+                placeholder="Например: Новый год 2025",
+                key="new_group_input"
+            )
+        if group_id:
+            st.success(f"✅ Будет создана новая группа: **{group_id}**")
+    elif selected_option == NO_GROUP_OPTION:
+        group_id = None
+        with col_grp2:
+            st.info("Кампания будет без группы")
+    else:
+        # Выбрана существующая группа
+        group_id = selected_option
+        with col_grp2:
+            st.success(f"✅ Выбрана группа: **{group_id}**")
+    
+    st.divider()
+    
+    # --- ФОРМА СОЗДАНИЯ КАМПАНИИ ---
     with st.form("new_campaign_form", clear_on_submit=True):
         # Основная информация
         st.markdown("### Основная информация")
@@ -67,28 +109,6 @@ def render_campaign_input_form() -> None:
                 CHANNELS,
                 help="Основной канал привлечения доноров"
             )
-            
-            # Группа кампаний
-            existing_groups = get_campaign_groups()
-            
-            # Формируем список опций
-            NO_GROUP_OPTION = "— Без группы —"
-            NEW_GROUP_OPTION = "➕ Создать новую..."
-            
-            group_options = [NO_GROUP_OPTION, NEW_GROUP_OPTION] + existing_groups
-            
-            selected_option = st.selectbox("Группа", group_options)
-            
-            group_id = None
-            
-            if selected_option == NEW_GROUP_OPTION:
-                group_id = st.text_input("Название новой группы", placeholder="Например: Новый год 2025")
-            elif selected_option == NO_GROUP_OPTION:
-                group_id = None
-            else:
-                # Выбрана существующая группа
-                group_id = selected_option
-                st.success(f"✅ Выбрана группа: **{group_id}**")
         
         with col2:
             # Даты
@@ -104,12 +124,6 @@ def render_campaign_input_form() -> None:
                 value=today + timedelta(days=30),
                 help="Планируемая дата завершения"
             )
-        
-        description = st.text_area(
-            "Описание кампании",
-            placeholder="Краткое описание целей и особенностей кампании",
-            height=100
-        )
         
         st.divider()
         
