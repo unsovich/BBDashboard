@@ -1777,7 +1777,12 @@ elif menu == "Ввод данных KPI":
             format_func=lambda x: kpi_display[x],
             key="input_kpi_key"
         )
-        kpi_name_full = kpi_display[selected_kpi_key]
+        # Защита от KeyError при переключении категорий
+        if selected_kpi_key in kpi_display:
+            kpi_name_full = kpi_display[selected_kpi_key]
+        else:
+            kpi_name_full = ""
+            selected_kpi_key = None
     else:
         st.warning("Нет показателей для данной категории.")
         selected_kpi_key = None
