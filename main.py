@@ -569,15 +569,16 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     df = df.loc[mask]
 
     if df.empty:
-        return pd.DataFrame()
+        # Возвращаем пустой DataFrame с правильной структурой колонок
+        return pd.DataFrame(columns=['Название', 'Категория', 'Минимум', 'Цель', 'Факт', 'Период'])
 
     # Определение правила группировки (Resampling rule)
     freq_map = {
         "День": "D",
         "Неделя": "W-SUN",  # Неделя заканчивается в воскресенье
-        "Месяц": "ME",
-        "Квартал": "QE",
-        "Год": "YE"
+        "Месяц": "MS",  # Month Start - начало месяца
+        "Квартал": "QS",  # Quarter Start
+        "Год": "YS"  # Year Start
     }
     freq = freq_map.get(granularity, "MS")
 
@@ -602,7 +603,8 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     if results:
         df_grouped = pd.concat(results).reset_index(drop=True)
     else:
-        return pd.DataFrame()
+        # Возвращаем пустой DataFrame с правильной структурой колонок
+        return pd.DataFrame(columns=['Название', 'Категория', 'Минимум', 'Цель', 'Факт', 'Период'])
 
     # Форматирование периода для отображения
     if granularity == "День":
