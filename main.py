@@ -575,9 +575,9 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     freq_map = {
         "День": "D",
         "Неделя": "W-SUN",  # Неделя заканчивается в воскресенье
-        "Месяц": "MS",
-        "Квартал": "QS",
-        "Год": "YS"
+        "Месяц": "ME",
+        "Квартал": "QE",
+        "Год": "YE"
     }
     freq = freq_map.get(granularity, "MS")
 
@@ -591,12 +591,12 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     
     # Группировка для средних
     if not df_mean.empty:
-        res_mean = df_mean.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq, label='right'), 'Название'])[numerical_cols].mean().reset_index()
+        res_mean = df_mean.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq, label='left'), 'Название', 'Категория'])[numerical_cols].mean().reset_index()
         results.append(res_mean)
         
     # Группировка для сумм
     if not df_sum.empty:
-        res_sum = df_sum.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq, label='right'), 'Название'])[numerical_cols].sum().reset_index()
+        res_sum = df_sum.groupby([pd.Grouper(key='Дата_Начала_DT', freq=freq, label='left'), 'Название', 'Категория'])[numerical_cols].sum().reset_index()
         results.append(res_sum)
     
     if results:
@@ -635,7 +635,7 @@ def filter_data_by_period(df, start_date, end_date, granularity):
     # Сортировка
     df_grouped = df_grouped.sort_values('Дата_Начала_DT')
 
-    return df_grouped[['Название', 'Минимум', 'Цель', 'Факт', 'Период']]
+    return df_grouped[['Название', 'Категория', 'Минимум', 'Цель', 'Факт', 'Период']]
 
 
 def render_program_financials(program_name, end_date):
@@ -691,8 +691,20 @@ def render_program_financials(program_name, end_date):
         )
 
 
-def render_chart(df_grouped, kpi_name, title_prefix="Динамика"):
+def render_chart(df_grouped, kpi_name, title_prefix="Динамика", category_filter=None):
+    """Отображает график KPI с опциональной фильтрацией по категории.
+    
+    Args:
+        df_grouped: DataFrame с данными
+        kpi_name: название KPI
+        title_prefix: префикс заголовка графика
+        category_filter: опциональная строка для фильтрации по категории (например, "Краснодар")
+    """
     chart_data = df_grouped[df_grouped['Название'] == kpi_name]
+    
+    # Применяем фильтр по категории, если указан
+    if category_filter and 'Категория' in df_grouped.columns:
+        chart_data = chart_data[chart_data['Категория'].str.contains(category_filter, na=False)]
 
     if chart_data.empty:
         fig = go.Figure()
@@ -857,6 +869,16 @@ if menu == "Сводный Дашборд":
         else:
             df_viz_all = df_viz
         
+        # Создаем отдельные датафреймы для каждого центра
+        df_viz_krasnodar = filter_data_by_period(
+            df_source[df_source['Категория'].str.contains('Краснодар', na=False)],
+            start_date, end_date, granularity
+        )
+        df_viz_krymsk = filter_data_by_period(
+            df_source[df_source['Категория'].str.contains('Крымск', na=False)],
+            start_date, end_date, granularity
+        )
+        
         prog_tabs = st.tabs(["Верь в себя", "Нужна помощь", "ЯЖивой"])
         
         # --- "Верь в себя" с подвкладками по центрам ---
@@ -877,11 +899,11 @@ if menu == "Сводный Дашборд":
                 
                 c_vs_kr1, c_vs_kr2 = st.columns(2)
                 with c_vs_kr1:
-                    st.plotly_chart(render_chart(df_viz_all, "Количество проведенных занятий (факт/план)"), use_container_width=True, key="chart_vs_kr_classes")
+                    st.plotly_chart(render_chart(df_viz_krasnodar, "Количество проведенных занятий (факт/план)", category_filter="Краснодар"), use_container_width=True, key="chart_vs_kr_classes")
                 with c_vs_kr2:
-                    st.plotly_chart(render_chart(df_viz_all, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_vs_kr_beneficiaries")
+                    st.plotly_chart(render_chart(df_viz_krasnodar, "Количество обслуженных благополучателей", category_filter="Краснодар"), use_container_width=True, key="chart_vs_kr_beneficiaries")
                 
-                st.plotly_chart(render_chart(df_viz_all, "Индекс достижения социальной реабилитации"), use_container_width=True, key="chart_vs_kr_social_rehab")
+                st.plotly_chart(render_chart(df_viz_krasnodar, "Индекс достижения социальной реабилитации", category_filter="Краснодар"), use_container_width=True, key="chart_vs_kr_social_rehab")
             
             # Крымск
             with center_tabs[1]:
@@ -895,11 +917,11 @@ if menu == "Сводный Дашборд":
                 
                 c_vs_krm1, c_vs_krm2 = st.columns(2)
                 with c_vs_krm1:
-                    st.plotly_chart(render_chart(df_viz_all, "Количество проведенных занятий (факт/план)"), use_container_width=True, key="chart_vs_krm_classes")
+                    st.plotly_chart(render_chart(df_viz_krymsk, "Количество проведенных занятий (факт/план)", category_filter="Крымск"), use_container_width=True, key="chart_vs_krm_classes")
                 with c_vs_krm2:
-                    st.plotly_chart(render_chart(df_viz_all, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_vs_krm_beneficiaries")
+                    st.plotly_chart(render_chart(df_viz_krymsk, "Количество обслуженных благополучателей", category_filter="Крымск"), use_container_width=True, key="chart_vs_krm_beneficiaries")
                 
-                st.plotly_chart(render_chart(df_viz_all, "Индекс достижения социальной реабилитации"), use_container_width=True, key="chart_vs_krm_social_rehab")
+                st.plotly_chart(render_chart(df_viz_krymsk, "Индекс достижения социальной реабилитации", category_filter="Крымск"), use_container_width=True, key="chart_vs_krm_social_rehab")
             
             # Общие (агрегированные)
             with center_tabs[2]:
@@ -947,11 +969,11 @@ if menu == "Сводный Дашборд":
                 
                 c_vs_all1, c_vs_all2 = st.columns(2)
                 with c_vs_all1:
-                    st.plotly_chart(render_chart(df_viz_all, "Количество проведенных занятий (факт/план)"), use_container_width=True, key="chart_vs_all_classes")
+                    st.plotly_chart(render_chart(df_viz_all, "Количество проведенных занятий (факт/план)", category_filter="Общие"), use_container_width=True, key="chart_vs_all_classes")
                 with c_vs_all2:
-                    st.plotly_chart(render_chart(df_viz_all, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_vs_all_beneficiaries")
+                    st.plotly_chart(render_chart(df_viz_all, "Количество обслуженных благополучателей", category_filter="Общие"), use_container_width=True, key="chart_vs_all_beneficiaries")
                 
-                st.plotly_chart(render_chart(df_viz_all, "Индекс достижения социальной реабилитации"), use_container_width=True, key="chart_vs_all_social_rehab")
+                st.plotly_chart(render_chart(df_viz_all, "Индекс достижения социальной реабилитации", category_filter="Общие"), use_container_width=True, key="chart_vs_all_social_rehab")
 
         # --- "Нужна помощь" ---
         with prog_tabs[1]:
