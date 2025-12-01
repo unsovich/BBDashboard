@@ -881,6 +881,16 @@ if menu == "Сводный Дашборд":
             start_date, end_date, granularity
         )
         
+        # Создаем отдельные датафреймы для других программ
+        df_viz_np = filter_data_by_period(
+            df_source[df_source['Категория'].str.contains('Нужна помощь', na=False)],
+            start_date, end_date, granularity
+        )
+        df_viz_yz = filter_data_by_period(
+            df_source[df_source['Категория'].str.contains('ЯЖивой', na=False)],
+            start_date, end_date, granularity
+        )
+        
         prog_tabs = st.tabs(["Верь в себя", "Нужна помощь", "ЯЖивой"])
         
         # --- "Верь в себя" с подвкладками по центрам ---
@@ -989,11 +999,11 @@ if menu == "Сводный Дашборд":
             
             c_np1, c_np2 = st.columns(2)
             with c_np1:
-                st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_np_beneficiaries")
+                st.plotly_chart(render_chart(df_viz_np, "Количество обслуженных благополучателей", category_filter="Нужна помощь"), use_container_width=True, key="chart_np_beneficiaries")
             with c_np2:
-                st.plotly_chart(render_chart(df_viz, "Объем предоставленной помощи (денежная форма)"), use_container_width=True, key="chart_np_money")
+                st.plotly_chart(render_chart(df_viz_np, "Объем предоставленной помощи (денежная форма)", category_filter="Нужна помощь"), use_container_width=True, key="chart_np_money")
             
-            st.plotly_chart(render_chart(df_viz, "Коэффициент своевременности рассмотрения заявок"), use_container_width=True, key="chart_np_timeliness")
+            st.plotly_chart(render_chart(df_viz_np, "Коэффициент своевременности рассмотрения заявок", category_filter="Нужна помощь"), use_container_width=True, key="chart_np_timeliness")
 
         # --- "ЯЖивой" ---
         with prog_tabs[2]:
@@ -1007,11 +1017,11 @@ if menu == "Сводный Дашборд":
             
             c_yz1, c_yz2 = st.columns(2)
             with c_yz1:
-                st.plotly_chart(render_chart(df_viz, "Количество обслуженных благополучателей"), use_container_width=True, key="chart_yz_beneficiaries")
+                st.plotly_chart(render_chart(df_viz_yz, "Количество обслуженных благополучателей", category_filter="ЯЖивой"), use_container_width=True, key="chart_yz_beneficiaries")
             with c_yz2:
-                st.plotly_chart(render_chart(df_viz, "Объем предоставленной целевой помощи"), use_container_width=True, key="chart_yz_target_aid")
+                st.plotly_chart(render_chart(df_viz_yz, "Объем предоставленной целевой помощи", category_filter="ЯЖивой"), use_container_width=True, key="chart_yz_target_aid")
             
-            st.plotly_chart(render_chart(df_viz, "Индекс достижения социальной адаптации"), use_container_width=True, key="chart_yz_social_adapt")
+            st.plotly_chart(render_chart(df_viz_yz, "Индекс достижения социальной адаптации", category_filter="ЯЖивой"), use_container_width=True, key="chart_yz_social_adapt")
 
 # --- 1.1 ДИНАМИКА СБОРОВ (НОВЫЙ РАЗДЕЛ) ---
 elif menu == "Динамика Сборов":
