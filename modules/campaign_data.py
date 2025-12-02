@@ -1,25 +1,91 @@
 """
 Модуль управления данными кампаний
 Отвечает за хранение, загрузку и базовые операции CRUD
+Использует JSON для хранения и поддерживает автоматические бэкапы.
 """
 
 import pandas as pd
-import pickle
+import json
 import os
+import shutil
+import glob
 from datetime import datetime, date
 from typing import Dict, List, Optional, Any
 
+# Пути к файлам
+DATA_DIR = "data"
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 
-# Путь к файлу хранения кампаний
-CAMPAIGNS_FILE = "data/campaigns.pkl"
+# Основные файлы (JSON)
+CAMPAIGNS_FILE_JSON = os.path.join(DATA_DIR, "campaigns.json")
+COLLECTION_HISTORY_FILE_JSON = os.path.join(DATA_DIR, "collection_history.json")
 
-# Путь к файлу истории сборов
-COLLECTION_HISTORY_FILE = "data/collection_history.pkl"
+# Устаревшие файлы (Pickle) - для миграции
+CAMPAIGNS_FILE_PKL = os.path.join(DATA_DIR, "campaigns.pkl")
+COLLECTION_HISTORY_FILE_PKL = os.path.join(DATA_DIR, "collection_history.pkl")
 
 
-def ensure_data_directory():
-    """Создает директорию data, если её нет"""
-    os.makedirs("data", exist_ok=True)
+def ensure_directories():
+    """Создает необходимые директории"""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+
+
+def create_backup(file_path: str):
+    """
+    Создает бэкап файла с timestamp.
+    Оставляет только последние 10 бэкапов.
+    """
+    if not os.path.exists(file_path):
+        return
+
+    ensure_directories()
+    
+    filename = os.path.basename(file_path)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_path = os.path.join(BACKUP_DIR, f"{filename}.{timestamp}.bak")
+    
+    try:
+        shutil.copy2(file_path, backup_path)
+        
+        # Очистка старых бэкапов (оставляем 10 последних для этого типа файла)
+        pattern = os.path.join(BACKUP_DIR, f"{filename}.*.bak")
+        backups = sorted(glob.glob(pattern))
+        
+        while len(backups) > 10:
+            os.remove(backups.pop(0))
+            
+    except Exception as e:
+        print(f"Ошибка создания бэкапа для {filename}: {e}")
+
+
+def migrate_pickle_to_json(pkl_path: str, json_path: str):
+    """
+    Мигрирует данные из pickle в json, если json не существует.
+    """
+    if not os.path.exists(pkl_path):
+        return
+        
+    if os.path.exists(json_path):
+        return
+
+    print(f"Миграция данных из {pkl_path} в {json_path}...")
+    try:
+        import pickle
+        with open(pkl_path, 'rb') as f:
+            df = pickle.load(f)
+            
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            # Конвертация дат в строки для JSON
+            # Pandas to_json с date_format='iso' сделает это, но для надежности
+            # при чтении мы будем парсить даты обратно
+            df.to_json(json_path, orient='records', date_format='iso', indent=2, force_ascii=False)
+            print("Миграция успешна.")
+            
+            # Бэкапим старый pkl
+            create_backup(pkl_path)
+    except Exception as e:
+        print(f"Ошибка миграции: {e}")
 
 
 def create_empty_campaigns_df() -> pd.DataFrame:
@@ -48,29 +114,55 @@ def create_empty_campaigns_df() -> pd.DataFrame:
 
 
 def load_campaigns() -> pd.DataFrame:
-    """Загружает кампании из файла или создает новый DataFrame"""
-    ensure_data_directory()
+    """Загружает кампании из JSON файла"""
+    ensure_directories()
     
-    try:
-        if os.path.exists(CAMPAIGNS_FILE):
-            with open(CAMPAIGNS_FILE, 'rb') as f:
-                df = pickle.load(f)
-                # Проверка структуры
-                if isinstance(df, pd.DataFrame) and not df.empty:
-                    return df
-    except Exception as e:
-        print(f"Ошибка загрузки кампаний: {e}")
+    # Попытка миграции, если есть старый файл и нет нового
+    migrate_pickle_to_json(CAMPAIGNS_FILE_PKL, CAMPAIGNS_FILE_JSON)
+    
+    if os.path.exists(CAMPAIGNS_FILE_JSON):
+        try:
+            df = pd.read_json(CAMPAIGNS_FILE_JSON, orient='records')
+            
+            # Восстановление типов дат
+            date_cols = ['start_date', 'end_date', 'created_at', 'updated_at']
+            for col in date_cols:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col]).dt.date
+                    # created_at и updated_at могут быть datetime, но для совместимости пока date
+                    # Если нужны datetime, можно убрать .dt.date для них
+            
+            # created_at/updated_at лучше оставить datetime
+            if 'created_at' in df.columns:
+                df['created_at'] = pd.to_datetime(df['created_at'])
+            if 'updated_at' in df.columns:
+                df['updated_at'] = pd.to_datetime(df['updated_at'])
+
+            if not df.empty:
+                return df
+                
+        except ValueError as e:
+            # Ошибка декодирования JSON или пустой файл
+            print(f"Ошибка чтения JSON кампаний: {e}")
+            # Бэкапим поврежденный файл
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            corrupted_path = f"{CAMPAIGNS_FILE_JSON}.corrupted.{timestamp}"
+            shutil.copy2(CAMPAIGNS_FILE_JSON, corrupted_path)
+            print(f"Поврежденный файл сохранен как {corrupted_path}")
     
     return create_empty_campaigns_df()
 
 
 def save_campaigns(df: pd.DataFrame) -> bool:
-    """Сохраняет кампании в файл"""
-    ensure_data_directory()
+    """Сохраняет кампании в JSON файл с бэкапом"""
+    ensure_directories()
     
     try:
-        with open(CAMPAIGNS_FILE, 'wb') as f:
-            pickle.dump(df, f)
+        # Создаем бэкап перед записью
+        create_backup(CAMPAIGNS_FILE_JSON)
+        
+        # Сохраняем
+        df.to_json(CAMPAIGNS_FILE_JSON, orient='records', date_format='iso', indent=2, force_ascii=False)
         return True
     except Exception as e:
         print(f"Ошибка сохранения кампаний: {e}")
@@ -103,7 +195,6 @@ def add_campaign(
 ) -> Dict[str, Any]:
     """
     Добавляет новую кампанию
-    Возвращает словарь с результатом: {'success': bool, 'campaign_id': str, 'message': str}
     """
     try:
         df = load_campaigns()
@@ -160,7 +251,6 @@ def add_campaign(
 def update_campaign(campaign_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
     """
     Обновляет данные кампании
-    updates - словарь с полями для обновления
     """
     try:
         df = load_campaigns()
@@ -274,7 +364,6 @@ def get_campaign_groups() -> List[str]:
     if 'group_id' not in df.columns:
         return []
     groups = df['group_id'].dropna().unique().tolist()
-    # print(f"DEBUG: Found groups: {groups}") 
     return groups
 
 
@@ -294,28 +383,41 @@ def create_empty_collection_history_df() -> pd.DataFrame:
 
 
 def load_collection_history() -> pd.DataFrame:
-    """Загружает историю сборов из файла"""
-    ensure_data_directory()
+    """Загружает историю сборов из JSON файла"""
+    ensure_directories()
     
-    try:
-        if os.path.exists(COLLECTION_HISTORY_FILE):
-            with open(COLLECTION_HISTORY_FILE, 'rb') as f:
-                df = pickle.load(f)
-                if isinstance(df, pd.DataFrame):
-                    return df
-    except Exception as e:
-        print(f"Ошибка загрузки истории сборов: {e}")
+    # Миграция
+    migrate_pickle_to_json(COLLECTION_HISTORY_FILE_PKL, COLLECTION_HISTORY_FILE_JSON)
+    
+    if os.path.exists(COLLECTION_HISTORY_FILE_JSON):
+        try:
+            df = pd.read_json(COLLECTION_HISTORY_FILE_JSON, orient='records')
+            
+            # Восстановление дат
+            if 'update_date' in df.columns:
+                df['update_date'] = pd.to_datetime(df['update_date']).dt.date
+            if 'created_at' in df.columns:
+                df['created_at'] = pd.to_datetime(df['created_at'])
+                
+            if not df.empty:
+                return df
+        except ValueError as e:
+            print(f"Ошибка чтения JSON истории: {e}")
+            # Бэкапим
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            corrupted_path = f"{COLLECTION_HISTORY_FILE_JSON}.corrupted.{timestamp}"
+            shutil.copy2(COLLECTION_HISTORY_FILE_JSON, corrupted_path)
     
     return create_empty_collection_history_df()
 
 
 def save_collection_history(df: pd.DataFrame) -> bool:
-    """Сохраняет историю сборов в файл"""
-    ensure_data_directory()
+    """Сохраняет историю сборов в JSON файл с бэкапом"""
+    ensure_directories()
     
     try:
-        with open(COLLECTION_HISTORY_FILE, 'wb') as f:
-            pickle.dump(df, f)
+        create_backup(COLLECTION_HISTORY_FILE_JSON)
+        df.to_json(COLLECTION_HISTORY_FILE_JSON, orient='records', date_format='iso', indent=2, force_ascii=False)
         return True
     except Exception as e:
         print(f"Ошибка сохранения истории сборов: {e}")
@@ -330,15 +432,6 @@ def add_collection_update(
 ) -> Dict[str, Any]:
     """
     Добавляет новую запись в историю сборов и обновляет общую сумму кампании
-    
-    Args:
-        campaign_id: ID кампании
-        amount_added: Добавленная сумма (положительная)
-        note: Примечание/комментарий
-        update_date: Дата обновления (по умолчанию - сегодня)
-    
-    Returns:
-        Dict с результатом операции
     """
     try:
         # Загружаем данные
@@ -438,4 +531,3 @@ def get_collection_summary(campaign_id: str) -> Dict[str, Any]:
         'last_update_amount': history_df.iloc[0]['amount_added'],
         'average_update': history_df['amount_added'].mean()
     }
-
