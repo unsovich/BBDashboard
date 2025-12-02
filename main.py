@@ -1825,8 +1825,14 @@ elif menu == "Ввод данных KPI":
         if selected_kpi_key in kpi_display:
             kpi_name_full = kpi_display[selected_kpi_key]
         else:
-            kpi_name_full = ""
-            selected_kpi_key = None
+            # Если выбранный ключ недействителен (например, остался от предыдущей категории),
+            # выбираем первый доступный KPI по умолчанию
+            if kpi_display:
+                selected_kpi_key = list(kpi_display.keys())[0]
+                kpi_name_full = kpi_display[selected_kpi_key]
+            else:
+                kpi_name_full = ""
+                selected_kpi_key = None
     else:
         st.warning("Нет показателей для данной категории.")
         selected_kpi_key = None
