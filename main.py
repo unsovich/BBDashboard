@@ -46,6 +46,8 @@ try:
         get_program_history,
         get_aggregated_financials,
         calculate_profitability,
+        get_program_financials_for_period,
+        get_aggregated_financials_for_period,
         PROGRAMS
     )
     FINANCIALS_MODULE_AVAILABLE = True
@@ -699,6 +701,188 @@ def render_program_financials(program_name, end_date):
         )
 
 
+def render_program_financials_chart(program_name, start_date, end_date, is_aggregated=False):
+    """
+    Отображает финансовые показатели программы в виде графиков за период
+    - Показывает графики доходов, расходов и окупаемости
+    - Добавляет накопленный итог за выбранный период
+    
+    Args:
+        program_name: название программы (например, "Верь в себя - Краснодар" или "Верь в себя - Общие")
+        start_date: дата начала периода
+        end_date: дата окончания периода
+        is_aggregated: если True, использует агрегированные данные для "Верь в себя - Общие"
+    """
+    if not FINANCIALS_MODULE_AVAILABLE:
+        st.warning("⚠️ Модуль финансов недоступен")
+        return
+    
+    # Получаем данные за период
+    if is_aggregated:
+        df = get_aggregated_financials_for_period(start_date, end_date)
+    else:
+        df = get_program_financials_for_period(program_name, start_date, end_date)
+    
+    if df.empty:
+        st.info(f"📊 Нет финансовых данных для программы \"{program_name}\" за выбранный период")
+        return
+    
+    # Форматируем период для отображения
+    month_names_ru = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн",
+                      "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
+    
+    df['period_label'] = df.apply(
+        lambda row: f"{month_names_ru[int(row['month'])-1]} {int(row['year'])}",
+        axis=1
+    )
+    
+    # Рассчитываем накопленный итог
+    df['cumulative_income'] = df['income'].cumsum()
+    df['cumulative_expenses'] = df['expenses'].cumsum()
+    df['cumulative_profit'] = df['cumulative_income'] - df['cumulative_expenses']
+    
+    # Создаем графики
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # График доходов
+        fig_income = go.Figure()
+        fig_income.add_trace(go.Bar(
+            x=df['period_label'],
+            y=df['income'],
+            name='Доходы',
+            marker_color='#2E7D32'
+        ))
+        fig_income.add_trace(go.Scatter(
+            x=df['period_label'],
+            y=df['cumulative_income'],
+            name='Накопленный итог',
+            line=dict(color='#66BB6A', width=3, dash='dash'),
+            yaxis='y2'
+        ))
+        
+        fig_income.update_layout(
+            title="Доходы",
+            xaxis_title="Период",
+            yaxis_title="Доходы, ₽",
+            yaxis2=dict(
+                title="Накопленный итог, ₽",
+                overlaying='y',
+                side='right'
+            ),
+            height=300,
+            margin=dict(l=20, r=20, t=40, b=20),
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        
+        st.plotly_chart(fig_income, use_container_width=True)
+    
+    with col2:
+        # График расходов
+        fig_expenses = go.Figure()
+        fig_expenses.add_trace(go.Bar(
+            x=df['period_label'],
+            y=df['expenses'],
+            name='Расходы',
+            marker_color='#C62828'
+        ))
+        fig_expenses.add_trace(go.Scatter(
+            x=df['period_label'],
+            y=df['cumulative_expenses'],
+            name='Накопленный итог',
+            line=dict(color='#EF5350', width=3, dash='dash'),
+            yaxis='y2'
+        ))
+        
+        fig_expenses.update_layout(
+            title="Расходы",
+            xaxis_title="Период",
+            yaxis_title="Расходы, ₽",
+            yaxis2=dict(
+                title="Накопленный итог, ₽",
+                overlaying='y',
+                side='right'
+            ),
+            height=300,
+            margin=dict(l=20, r=20, t=40, b=20),
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        
+        st.plotly_chart(fig_expenses, use_container_width=True)
+    
+    # График окупаемости и накопленной прибыли
+    fig_profitability = go.Figure()
+    
+    fig_profitability.add_trace(go.Scatter(
+        x=df['period_label'],
+        y=df['profitability'],
+        name='Окупаемость, %',
+        line=dict(color='#1976D2', width=2),
+        mode='lines+markers'
+    ))
+    
+    fig_profitability.add_trace(go.Scatter(
+        x=df['period_label'],
+        y=df['cumulative_profit'],
+        name='Накопленная прибыль, ₽',
+        line=dict(color='#FFA726', width=3, dash='dot'),
+        yaxis='y2',
+        mode='lines+markers'
+    ))
+    
+    # Добавляем нулевую линию для окупаемости
+    fig_profitability.add_hline(y=0, line_dash="solid", line_color="gray", line_width=1, opacity=0.5)
+    
+    fig_profitability.update_layout(
+        title="Окупаемость и накопленная прибыль",
+        xaxis_title="Период",
+        yaxis_title="Окупаемость, %",
+        yaxis2=dict(
+            title="Накопленная прибыль, ₽",
+            overlaying='y',
+            side='right'
+        ),
+        height=300,
+        margin=dict(l=20, r=20, t=40, b=20),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    st.plotly_chart(fig_profitability, use_container_width=True)
+    
+    # Отображаем итоговые показатели
+    total_income = df['income'].sum()
+    total_expenses = df['expenses'].sum()
+    total_profitability = calculate_profitability(total_income, total_expenses)
+    
+    st.markdown("---")
+    st.markdown("**Итого за период:**")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "Всего доходов",
+            f"{total_income:,.0f} ₽"
+        )
+    
+    with col2:
+        st.metric(
+            "Всего расходов",
+            f"{total_expenses:,.0f} ₽"
+        )
+    
+    with col3:
+        st.metric(
+            "Средняя окупаемость",
+            f"{total_profitability:.1f}%",
+            delta="Прибыль" if total_profitability > 0 else ("Убыток" if total_profitability < 0 else None)
+        )
+
+
+
 def render_chart(df_grouped, kpi_name, title_prefix="Динамика", category_filter=None):
     """Отображает график KPI с опциональной фильтрацией по категории.
     
@@ -832,10 +1016,12 @@ if menu == "Сводный Дашборд":
             available_granularities.append("Год")
             
         # Выбор гранулярности
+        # Определяем индекс месяца, если доступен
+        default_index = available_granularities.index("Месяц") if "Месяц" in available_granularities else 0
         granularity = st.selectbox(
             "Шаг графика:",
             available_granularities,
-            index=len(available_granularities)-1, # Default to largest available
+            index=default_index,  # Default to "Месяц" (Month)
             key="dashboard_granularity"
         )
 
@@ -910,7 +1096,7 @@ if menu == "Сводный Дашборд":
                 st.markdown("#### Центр развития: Краснодар")
                 
                 # Финансовые показатели
-                render_program_financials("Верь в себя - Краснодар", end_date)
+                render_program_financials_chart("Верь в себя - Краснодар", start_date, end_date)
                 
                 st.divider()
                 st.markdown("**KPI показатели:**")
@@ -928,7 +1114,7 @@ if menu == "Сводный Дашборд":
                 st.markdown("#### Центр развития: Крымск")
                 
                 # Финансовые показатели
-                render_program_financials("Верь в себя - Крымск", end_date)
+                render_program_financials_chart("Верь в себя - Крымск", start_date, end_date)
                 
                 st.divider()
                 st.markdown("**KPI показатели:**")
@@ -946,41 +1132,7 @@ if menu == "Сводный Дашборд":
                 st.markdown("#### Общие показатели (Краснодар + Крымск)")
                 
                 # Финансовые показатели - агрегированные
-                if FINANCIALS_MODULE_AVAILABLE:
-                    target_year = end_date.year
-                    target_month = end_date.month
-                    
-                    # Получаем агрегированные финансовые данные
-                    agg_financials = get_aggregated_financials(target_year, target_month)
-                    
-                    if 'Верь в себя - Общие' in agg_financials:
-                        total_data = agg_financials['Верь в себя - Общие']
-                        
-                        col1, col2, col3 = st.columns(3)
-                        
-                        month_names = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн",
-                                      "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
-                        
-                        with col1:
-                            st.metric(
-                                f"Доходы ({month_names[target_month-1]} {target_year})",
-                                f"{total_data['income']:,.0f} ₽"
-                            )
-                        
-                        with col2:
-                            st.metric(
-                                "Расходы",
-                                f"{total_data['expenses']:,.0f} ₽"
-                            )
-                        
-                        with col3:
-                            st.metric(
-                                "Окупаемость",
-                                f"{total_data['profitability']:.1f}%",
-                                delta="Прибыль" if total_data['profitability'] > 0 else ("Убыток" if total_data['profitability'] < 0 else None)
-                            )
-                    else:
-                        st.warning("⚠️ Нет финансовых данных по центрам за выбранный период")
+                render_program_financials_chart("Верь в себя - Общие", start_date, end_date, is_aggregated=True)
                 
                 st.divider()
                 st.markdown("**Агрегированные KPI показатели:**")
@@ -998,7 +1150,7 @@ if menu == "Сводный Дашборд":
             st.markdown("### Программа \"Нужна помощь\"")
             
             # Финансовые показатели
-            render_program_financials("Нужна помощь", end_date)
+            render_program_financials_chart("Нужна помощь", start_date, end_date)
             
             st.divider()
             st.markdown("**KPI показатели:**")
@@ -1016,7 +1168,7 @@ if menu == "Сводный Дашборд":
             st.markdown("### Программа \"ЯЖивой\"")
             
             # Финансовые показатели
-            render_program_financials("ЯЖивой", end_date)
+            render_program_financials_chart("ЯЖивой", start_date, end_date)
             
             st.divider()
             st.markdown("**KPI показатели:**")

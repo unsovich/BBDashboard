@@ -392,3 +392,124 @@ def get_aggregated_financials(year: int, month: int) -> Dict[str, Dict[str, floa
             }
     
     return result
+
+
+def get_program_financials_for_period(
+    program: str,
+    start_date: date,
+    end_date: date
+) -> pd.DataFrame:
+    """
+    Получает финансовые данные программы за указанный период
+    
+    Args:
+        program: название программы
+        start_date: начало периода
+        end_date: конец периода
+    
+    Returns:
+        DataFrame с колонками: year, month, income, expenses, profitability
+        Отсортирован по году и месяцу
+    """
+    df = load_financials()
+    
+    if df.empty:
+        return pd.DataFrame(columns=['year', 'month', 'income', 'expenses', 'profitability'])
+    
+    # Фильтруем по программе
+    program_data = df[df['program'] == program].copy()
+    
+    if program_data.empty:
+        return pd.DataFrame(columns=['year', 'month', 'income', 'expenses', 'profitability'])
+    
+    # Фильтруем по периоду
+    # Создаем временную колонку с датами для фильтрации
+    program_data['date_temp'] = pd.to_datetime(
+        program_data['year'].astype(str) + '-' + program_data['month'].astype(str) + '-01'
+    )
+    
+    start_dt = pd.Timestamp(start_date)
+    end_dt = pd.Timestamp(end_date)
+    
+    # Фильтруем по периоду (включаем месяцы, где первое число попадает в диапазон)
+    period_data = program_data[
+        (program_data['date_temp'] >= start_dt.replace(day=1)) & 
+        (program_data['date_temp'] <= end_dt)
+    ].copy()
+    
+    if period_data.empty:
+        return pd.DataFrame(columns=['year', 'month', 'income', 'expenses', 'profitability'])
+    
+    # Рассчитываем окупаемость
+    period_data['profitability'] = period_data.apply(
+        lambda row: calculate_profitability(row['income'], row['expenses']),
+        axis=1
+    )
+    
+    # Сортируем по году и месяцу
+    period_data = period_data.sort_values(['year', 'month'])
+    
+    # Возвращаем только нужные колонки
+    return period_data[['year', 'month', 'income', 'expenses', 'profitability']].reset_index(drop=True)
+
+
+def get_aggregated_financials_for_period(
+    start_date: date,
+    end_date: date
+) -> pd.DataFrame:
+    """
+    Получает агрегированные финансовые данные для "Верь в себя - Общие" за период
+    
+    Args:
+        start_date: начало периода
+        end_date: конец периода
+    
+    Returns:
+        DataFrame с колонками: year, month, income, expenses, profitability
+    """
+    df = load_financials()
+    
+    if df.empty:
+        return pd.DataFrame(columns=['year', 'month', 'income', 'expenses', 'profitability'])
+    
+    # Фильтруем данные по периоду
+    df['date_temp'] = pd.to_datetime(
+        df['year'].astype(str) + '-' + df['month'].astype(str) + '-01'
+    )
+    
+    start_dt = pd.Timestamp(start_date)
+    end_dt = pd.Timestamp(end_date)
+    
+    period_data = df[
+        (df['date_temp'] >= start_dt.replace(day=1)) & 
+        (df['date_temp'] <= end_dt)
+    ].copy()
+    
+    if period_data.empty:
+        return pd.DataFrame(columns=['year', 'month', 'income', 'expenses', 'profitability'])
+    
+    # Фильтруем только центры Верь в себя
+    vs_data = period_data[
+        (period_data['program'] == 'Верь в себя - Краснодар') |
+        (period_data['program'] == 'Верь в себя - Крымск')
+    ]
+    
+    if vs_data.empty:
+        return pd.DataFrame(columns=['year', 'month', 'income', 'expenses', 'profitability'])
+    
+    # Группируем по году и месяцу, суммируя доходы и расходы
+    aggregated = vs_data.groupby(['year', 'month']).agg({
+        'income': 'sum',
+        'expenses': 'sum'
+    }).reset_index()
+    
+    # Рассчитываем окупаемость
+    aggregated['profitability'] = aggregated.apply(
+        lambda row: calculate_profitability(row['income'], row['expenses']),
+        axis=1
+    )
+    
+    # Сортируем по году и месяцу
+    aggregated = aggregated.sort_values(['year', 'month'])
+    
+    return aggregated.reset_index(drop=True)
