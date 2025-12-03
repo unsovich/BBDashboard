@@ -913,112 +913,103 @@ def render_program_financials_chart(program_name, start_date, end_date, is_aggre
     col1, col2 = st.columns(2)
     
     with col1:
-        # График доходов
-        fig_income = go.Figure()
-        fig_income.add_trace(go.Bar(
+        # ОБЪЕДИНЕННЫЙ график доходов и расходов
+        fig_finances = go.Figure()
+        
+        # Добавляем столбцы доходов
+        fig_finances.add_trace(go.Bar(
             x=df['period_label'],
             y=df['income'],
             name='Доходы',
-            marker_color='#2E7D32'
-        ))
-        fig_income.add_trace(go.Scatter(
-            x=df['period_label'],
-            y=df['cumulative_income'],
-            name='Накопленный итог',
-            line=dict(color='#66BB6A', width=3, dash='dash'),
-            yaxis='y2'
+            marker_color='#2E7D32',
+            text=df['income'].apply(lambda x: f'{x:,.2f}'),
+            textposition='outside',
+            textfont=dict(size=10)
         ))
         
-        fig_income.update_layout(
-            title="Доходы",
-            xaxis_title="Период",
-            yaxis_title="Доходы, ₽",
-            yaxis2=dict(
-                title="Накопленный итог, ₽",
-                overlaying='y',
-                side='right'
-            ),
-            height=300,
-            margin=dict(l=20, r=20, t=40, b=20),
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
-        
-        st.plotly_chart(fig_income, use_container_width=True)
-    
-    with col2:
-        # График расходов
-        fig_expenses = go.Figure()
-        fig_expenses.add_trace(go.Bar(
+        # Добавляем столбцы расходов
+        fig_finances.add_trace(go.Bar(
             x=df['period_label'],
             y=df['expenses'],
             name='Расходы',
-            marker_color='#C62828'
-        ))
-        fig_expenses.add_trace(go.Scatter(
-            x=df['period_label'],
-            y=df['cumulative_expenses'],
-            name='Накопленный итог',
-            line=dict(color='#EF5350', width=3, dash='dash'),
-            yaxis='y2'
+            marker_color='#C62828',
+            text=df['expenses'].apply(lambda x: f'{x:,.2f}'),
+            textposition='outside',
+            textfont=dict(size=10)
         ))
         
-        fig_expenses.update_layout(
-            title="Расходы",
+        # Добавляем линию накопленной прибыли
+        fig_finances.add_trace(go.Scatter(
+            x=df['period_label'],
+            y=df['cumulative_profit'],
+            name='Накопленная прибыль',
+            line=dict(color='#1976D2', width=3, dash='dash'),
+            yaxis='y2',
+            mode='lines+markers',
+            text=df['cumulative_profit'].apply(lambda x: f'{x:,.2f}'),
+            textposition='top center',
+            textfont=dict(size=9)
+        ))
+        
+        fig_finances.update_layout(
+            title="Доходы и Расходы",
             xaxis_title="Период",
-            yaxis_title="Расходы, ₽",
+            yaxis_title="Сумма, ₽",
             yaxis2=dict(
-                title="Накопленный итог, ₽",
+                title="Накопленная прибыль, ₽",
                 overlaying='y',
                 side='right'
             ),
-            height=300,
+            height=350,
             margin=dict(l=20, r=20, t=40, b=20),
             showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            barmode='group',  # Столбцы рядом друг с другом
+            yaxis=dict(
+                tickformat=',.2f'  # Форматирование оси Y до 2 знаков
+            ),
+            yaxis2=dict(
+                title="Накопленная прибыль, ₽",
+                overlaying='y',
+                side='right',
+                tickformat=',.2f'  # Форматирование второй оси Y до 2 знаков
+            )
         )
         
-        st.plotly_chart(fig_expenses, use_container_width=True)
+        st.plotly_chart(fig_finances, use_container_width=True)
     
-    # График окупаемости и накопленной прибыли
-    fig_profitability = go.Figure()
-    
-    fig_profitability.add_trace(go.Scatter(
-        x=df['period_label'],
-        y=df['profitability'],
-        name='Окупаемость, %',
-        line=dict(color='#1976D2', width=2),
-        mode='lines+markers'
-    ))
-    
-    fig_profitability.add_trace(go.Scatter(
-        x=df['period_label'],
-        y=df['cumulative_profit'],
-        name='Накопленная прибыль, ₽',
-        line=dict(color='#FFA726', width=3, dash='dot'),
-        yaxis='y2',
-        mode='lines+markers'
-    ))
-    
-    # Добавляем нулевую линию для окупаемости
-    fig_profitability.add_hline(y=0, line_dash="solid", line_color="gray", line_width=1, opacity=0.5)
-    
-    fig_profitability.update_layout(
-        title="Окупаемость и накопленная прибыль",
-        xaxis_title="Период",
-        yaxis_title="Окупаемость, %",
-        yaxis2=dict(
-            title="Накопленная прибыль, ₽",
-            overlaying='y',
-            side='right'
-        ),
-        height=300,
-        margin=dict(l=20, r=20, t=40, b=20),
-        showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-    
-    st.plotly_chart(fig_profitability, use_container_width=True)
+    with col2:
+        # График окупаемости
+        fig_profitability = go.Figure()
+        
+        fig_profitability.add_trace(go.Scatter(
+            x=df['period_label'],
+            y=df['profitability'],
+            name='Окупаемость, %',
+            line=dict(color='#1976D2', width=2),
+            mode='lines+markers',
+            text=df['profitability'].apply(lambda x: f'{x:.2f}%'),
+            textposition='top center',
+            textfont=dict(size=10)
+        ))
+        
+        # Добавляем нулевую линию для окупаемости
+        fig_profitability.add_hline(y=0, line_dash="solid", line_color="gray", line_width=1, opacity=0.5)
+        
+        fig_profitability.update_layout(
+            title="Окупаемость",
+            xaxis_title="Период",
+            yaxis_title="Окупаемость, %",
+            height=350,
+            margin=dict(l=20, r=20, t=40, b=20),
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            yaxis=dict(
+                tickformat='.2f'  # Форматирование до 2 знаков после запятой
+            )
+        )
+        
+        st.plotly_chart(fig_profitability, use_container_width=True)
     
     # Отображаем итоговые показатели
     total_income = df['income'].sum()
