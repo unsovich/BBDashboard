@@ -955,11 +955,6 @@ def render_program_financials_chart(program_name, start_date, end_date, is_aggre
             title="Доходы и Расходы",
             xaxis_title="Период",
             yaxis_title="Сумма, ₽",
-            yaxis2=dict(
-                title="Накопленная прибыль, ₽",
-                overlaying='y',
-                side='right'
-            ),
             height=350,
             margin=dict(l=20, r=20, t=40, b=20),
             showlegend=True,
