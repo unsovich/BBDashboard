@@ -21,7 +21,8 @@ try:
         supabase_upsert,
         supabase_delete,
         supabase_select,
-        dataframe_to_supabase
+        dataframe_to_supabase,
+        replace_table_data
     )
     SUPABASE_MODULE_AVAILABLE = True
 except ImportError:
@@ -100,7 +101,9 @@ def save_financials(df: pd.DataFrame) -> bool:
             if 'id' in df_to_save.columns:
                 df_to_save = df_to_save.drop(columns=['id'])
             
-            success = dataframe_to_supabase(df_to_save, 'program_financials')
+            # ИСПРАВЛЕНИЕ: Используем replace_table_data вместо dataframe_to_supabase
+            # Это удаляет все старые записи перед вставкой новых, предотвращая дубликаты
+            success = replace_table_data(df_to_save, 'program_financials')
             if success:
                 print(f"✅ Saved {len(df)} financial records to Supabase")
                 return True
