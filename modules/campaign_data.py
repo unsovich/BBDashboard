@@ -21,7 +21,8 @@ try:
         supabase_update,
         supabase_delete,
         supabase_select,
-        dataframe_to_supabase
+        dataframe_to_supabase,
+        replace_table_data
     )
     SUPABASE_MODULE_AVAILABLE = True
 except ImportError:
@@ -190,9 +191,9 @@ def save_campaigns(df: pd.DataFrame) -> bool:
             if 'id' in df_to_save.columns:
                 df_to_save = df_to_save.drop(columns=['id'])
             
-            # Полная перезапись: сначала удаляем все, потом вставляем
-            # Это простой подход, для больших данных лучше использовать upsert
-            success = dataframe_to_supabase(df_to_save, 'campaigns')
+            # ИСПРАВЛЕНИЕ: Используем replace_table_data вместо dataframe_to_supabase
+            # Это удаляет все старые записи перед вставкой новых, предотвращая дубликаты
+            success = replace_table_data(df_to_save, 'campaigns')
             if success:
                 print(f"✅ Saved {len(df)} campaigns to Supabase")
                 return True
@@ -475,7 +476,9 @@ def save_collection_history(df: pd.DataFrame) -> bool:
             if 'id' in df_to_save.columns:
                 df_to_save = df_to_save.drop(columns=['id'])
             
-            success = dataframe_to_supabase(df_to_save, 'collection_history')
+            # ИСПРАВЛЕНИЕ: Используем replace_table_data вместо dataframe_to_supabase
+            # Это удаляет все старые записи перед вставкой новых, предотвращая дубликаты
+            success = replace_table_data(df_to_save, 'collection_history')
             if success:
                 return True
         except Exception as e:
