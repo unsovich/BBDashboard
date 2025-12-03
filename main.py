@@ -488,42 +488,112 @@ def load_from_file():
 
 # --- ИСПРАВЛЕННАЯ ИНИЦИАЛИЗАЦИЯ SESSION STATE ---
 # КРИТИЧЕСКАЯ ЗАЩИТА ОТ ПОТЕРИ ДАННЫХ:
-# 1. Сначала проверяем наличие файла бэкапа
-# 2. Генерируем mock данные ТОЛЬКО если файла НЕТ ВООБЩЕ
-# 3. Если файл есть, но пустой - сохраняем пустой DataFrame (пользователь очистил данные)
+# 1. ПРИОРИТЕТ 1: Загружаем из Supabase (если доступен)
+# 2. ПРИОРИТЕТ 2: Загружаем из локального файла (fallback)
+# 3. ПРИОРИТЕТ 3: Генерируем mock данные (только при первом запуске)
+# 4. НИКОГДА НЕ ОЧИЩАЕМ ДАННЫЕ АВТОМАТИЧЕСКИ
 
 if 'kpi_history' not in st.session_state:
-    # Пытаемся загрузить из файла
-    loaded_data = load_from_file()
+    loaded_data = None
+    data_source = None
     
-    if loaded_data is not None:
-        # Файл существует и загружен успешно
-        # Используем данные из файла даже если они пустые
-        st.session_state.kpi_history = loaded_data
-        st.session_state.data_source = "loaded_from_file"
-    elif os.path.exists(BACKUP_FILE):
-        # Файл существует, но не удалось загрузить (поврежден)
-        st.warning(f"⚠️ Файл {BACKUP_FILE} поврежден. Создаем резервную копию и начинаем с пустой базы.")
-        # Переименовываем поврежденный файл
-        backup_corrupted = f"{BACKUP_FILE}.corrupted.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    # ПРИОРИТЕТ 1: Пытаемся загрузить из Supabase
+    if SUPABASE_MODULE_AVAILABLE and use_supabase():
         try:
-            os.rename(BACKUP_FILE, backup_corrupted)
-            st.info(f"Поврежденный файл сохранен как: {backup_corrupted}")
-        except:
-            pass
-        # Начинаем с пустой базы
-        st.session_state.kpi_history = pd.DataFrame(columns=REQUIRED_COLUMNS)
-        save_to_file(st.session_state.kpi_history)
-        st.session_state.data_source = "corrupted_file_recovered"
-    else:
-        # Файла НЕ СУЩЕСТВУЕТ - это первый запуск
-        # ТОЛЬКО в этом случае генерируем mock данные
-        st.session_state.kpi_history = generate_mock_data()
-        save_to_file(st.session_state.kpi_history)
-        st.session_state.data_source = "generated_mock_data"
-        st.info("ℹ️ Первый запуск: создана база с тестовыми данными. Вы можете удалить их в разделе 'История (Редактор)'.")
+            print("🔄 Attempting to load data from Supabase...")
+            loaded_data = load_kpi_history()  # Эта функция уже пытается загрузить из Supabase
+            if loaded_data is not None and not loaded_data.empty:
+                st.session_state.kpi_history = loaded_data
+                st.session_state.data_source = "loaded_from_supabase"
+                print(f"✅ Loaded {len(loaded_data)} records from Supabase")
+            else:
+                print("📊 Supabase is empty, checking local backup...")
+                loaded_data = None  # Reset to try local file
+        except Exception as e:
+            print(f"⚠️ Error loading from Supabase: {e}")
+            loaded_data = None
+    
+    # ПРИОРИТЕТ 2: Если Supabase недоступен или пуст, пытаемся загрузить из локального файла
+    if loaded_data is None and os.path.exists(BACKUP_FILE):
+        try:
+            print(f"🔄 Attempting to load data from local file: {BACKUP_FILE}")
+            with open(BACKUP_FILE, 'rb') as f:
+                loaded_data = pickle.load(f)
+            
+            if loaded_data is not None and not loaded_data.empty:
+                st.session_state.kpi_history = loaded_data
+                st.session_state.data_source = "loaded_from_local_file"
+                print(f"✅ Loaded {len(loaded_data)} records from local file")
+                
+                # Если используем Supabase, синхронизируем данные из локального файла
+                if SUPABASE_MODULE_AVAILABLE and use_supabase():
+                    print("🔄 Syncing local data to Supabase...")
+                    save_to_file(loaded_data)  # Это сохранит в Supabase
+            else:
+                loaded_data = None
+        except Exception as e:
+            # ВАЖНО: Не очищаем данные при ошибке загрузки!
+            # Просто логируем ошибку и переходим к следующему приоритету
+            print(f"⚠️ Error loading from local file: {e}")
+            st.warning(f"⚠️ Не удалось загрузить локальный файл: {e}")
+            
+            # Переименовываем поврежденный файл, но НЕ ОЧИЩАЕМ БАЗУ
+            backup_corrupted = f"{BACKUP_FILE}.corrupted.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            try:
+                os.rename(BACKUP_FILE, backup_corrupted)
+                st.info(f"Поврежденный файл сохранен как: {backup_corrupted}")
+            except:
+                pass
+            
+            loaded_data = None
+    
+    # ПРИОРИТЕТ 3: Если ничего не загружено, начинаем с пустой базы или mock данных
+    if loaded_data is None:
+        # Проверяем, есть ли данные в Supabase (на случай если первая попытка не сработала)
+        if SUPABASE_MODULE_AVAILABLE and use_supabase():
+            try:
+                df_from_supabase = supabase_to_dataframe('kpi_history', order_by='date_start.desc')
+                if not df_from_supabase.empty:
+                    # Данные есть в Supabase! Используем их
+                    column_mapping_reverse = {
+                        'date_start': 'Дата_Начала',
+                        'date_end': 'Дата_Окончания',
+                        'week_year': 'Неделя_Год',
+                        'date_range': 'Промежуток_Дат',
+                        'category': 'Категория',
+                        'kpi_id': 'KPI_ID',
+                        'name': 'Название',
+                        'minimum': 'Минимум',
+                        'target': 'Цель',
+                        'actual': 'Факт',
+                        'comment': 'Комментарий'
+                    }
+                    df_from_supabase = df_from_supabase.rename(columns=column_mapping_reverse)
+                    st.session_state.kpi_history = df_from_supabase
+                    st.session_state.data_source = "recovered_from_supabase"
+                    print(f"✅ Recovered {len(df_from_supabase)} records from Supabase")
+                else:
+                    # Supabase действительно пуст - это первый запуск
+                    st.session_state.kpi_history = generate_mock_data()
+                    save_to_file(st.session_state.kpi_history)
+                    st.session_state.data_source = "generated_mock_data"
+                    st.info("ℹ️ Первый запуск: создана база с тестовыми данными. Вы можете удалить их в разделе 'История (Редактор)'.")
+            except Exception as e:
+                print(f"⚠️ Error checking Supabase: {e}")
+                # В крайнем случае начинаем с пустой базы
+                st.session_state.kpi_history = pd.DataFrame(columns=REQUIRED_COLUMNS)
+                st.session_state.data_source = "empty_fallback"
+                st.warning("⚠️ Не удалось загрузить данные. Начинаем с пустой базы.")
+        else:
+            # Supabase недоступен и нет локального файла - первый запуск
+            st.session_state.kpi_history = generate_mock_data()
+            save_to_file(st.session_state.kpi_history)
+            st.session_state.data_source = "generated_mock_data"
+            st.info("ℹ️ Первый запуск: создана база с тестовыми данными. Вы можете удалить их в разделе 'История (Редактор)'.")
     
     st.session_state.data_initialized = True
+    print(f"📊 Data initialized from: {st.session_state.data_source}")
+
 
 
 # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Убрана автоматическая очистка при каждом обновлении страницы
