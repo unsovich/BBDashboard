@@ -56,6 +56,20 @@ except ImportError as e:
     FINANCIALS_ERROR = str(e)
     print(f"Program financials module not available: {e}")
 
+# Импорт Supabase manager
+try:
+    from modules.supabase_manager import (
+        use_supabase,
+        supabase_to_dataframe,
+        dataframe_to_supabase,
+        get_storage_mode,
+        test_connection
+    )
+    SUPABASE_MODULE_AVAILABLE = True
+except ImportError as e:
+    SUPABASE_MODULE_AVAILABLE = False
+    print(f"Supabase module not available: {e}")
+
 
 # --- НАСТРОЙКИ И КОНСТАНТЫ ---
 st.set_page_config(page_title="АНО «Синяя птица» - KPI Monitor v2.17 (ИСПРАВЛЕНА ПОТЕРЯ ДАННЫХ)", layout="wide")
@@ -366,9 +380,50 @@ def clean_data_types(df):
     return df
 
 
-# --- ФУНКЦИЯ СОХРАНЕНИЯ В ФАЙЛ ---
-def save_to_file(df):
-    """Сохраняет DataFrame в файл бэкапа"""
+# --- ФУНКЦИЯ СОХРАНЕНИЯ ---
+def save_kpi_history(df):
+    """Сохраняет KPI историю в Supabase или локальный файл"""
+    # Проверяем, используем ли Supabase
+    if SUPABASE_MODULE_AVAILABLE and use_supabase():
+        try:
+            # Преобразуем колонки в соответствии со схемой Supabase
+            df_to_save = df.copy()
+            if 'id' in df_to_save.columns:
+                df_to_save = df_to_save.drop(columns=['id'])
+            
+            # Переименовываем колонки для Supabase
+            column_mapping = {
+                'Дата_Начала': 'date_start',
+                'Дата_Окончания': 'date_end',
+                'Неделя_Год': 'week_year',
+                'Промежуток_Дат': 'date_range',
+                'Категория': 'category',
+                'KPI_ID': 'kpi_id',
+                'Название': 'name',
+                'Минимум': 'minimum',
+                'Цель': 'target',
+                'Факт': 'actual',
+                'Комментарий': 'comment'
+            }
+            df_to_save = df_to_save.rename(columns=column_mapping)
+            
+            # Добавляем timestampы
+            if 'created_at' not in df_to_save.columns:
+                df_to_save['created_at'] = datetime.now()
+            if 'updated_at' not in df_to_save.columns:
+                df_to_save['updated_at'] = datetime.now()
+            
+            success = dataframe_to_supabase(df_to_save, 'kpi_history')
+            if success:
+                print(f"✅ Saved {len(df)} KPI records to Supabase")
+                return
+            else:
+                print("⚠️ Failed to save to Supabase, falling back to local")
+        except Exception as e:
+            print(f"⚠️ Error saving to Supabase: {e}")
+            # Fallback to local
+    
+    # Локальное хранилище (pickle)
     try:
         with open(BACKUP_FILE, 'wb') as f:
             pickle.dump(df, f)
@@ -376,9 +431,38 @@ def save_to_file(df):
         st.error(f"Ошибка сохранения бэкапа: {e}")
 
 
-# --- ФУНКЦИЯ ЗАГРУЗКИ ИЗ ФАЙЛА ---
-def load_from_file():
-    """Загружает DataFrame из файла бэкапа"""
+def load_kpi_history():
+    """Загружает KPI историю из Supabase или локального файла"""
+    # Проверяем, используем ли Supabase
+    if SUPABASE_MODULE_AVAILABLE and use_supabase():
+        try:
+            df = supabase_to_dataframe('kpi_history', order_by='date_start.desc')
+            if not df.empty:
+                # Переименовываем колонки обратно для совместимости
+                column_mapping_reverse = {
+                    'date_start': 'Дата_Начала',
+                    'date_end': 'Дата_Окончания',
+                    'week_year': 'Неделя_Год',
+                    'date_range': 'Промежуток_Дат',
+                    'category': 'Категория',
+                    'kpi_id': 'KPI_ID',
+                    'name': 'Название',
+                    'minimum': 'Минимум',
+                    'target': 'Цель',
+                    'actual': 'Факт',
+                    'comment': 'Комментарий'
+                }
+                df = df.rename(columns=column_mapping_reverse)
+                print(f"✅ Loaded {len(df)} KPI records from Supabase")
+                return df
+            else:
+                print("📊 No KPI data in Supabase")
+                return None
+        except Exception as e:
+            print(f"⚠️ Error loading from Supabase: {e}")
+            # Fallback to local
+    
+    # Локальное хранилище (pickle)
     try:
         if os.path.exists(BACKUP_FILE):
             with open(BACKUP_FILE, 'rb') as f:
@@ -386,6 +470,17 @@ def load_from_file():
     except Exception as e:
         st.warning(f"Не удалось загрузить бэкап: {e}")
     return None
+
+
+# Старые функции для обратной совместимости
+def save_to_file(df):
+    """Сохраняет DataFrame в файл бэкапа (старая функция)"""
+    save_kpi_history(df)
+
+
+def load_from_file():
+    """Загружает DataFrame из файла бэкапа (старая функция)"""
+    return load_kpi_history()
 
 
 # --- ИСПРАВЛЕННАЯ ИНИЦИАЛИЗАЦИЯ SESSION STATE ---

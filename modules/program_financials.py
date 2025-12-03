@@ -1,6 +1,7 @@
 """
 Модуль управления финансовыми данными программ
 Отвечает за хранение, загрузку и расчеты финансовых показателей программ
+Поддерживает Supabase (облако) и pickle (локальное хранилище)
 """
 
 import pandas as pd
@@ -9,6 +10,23 @@ import os
 from datetime import datetime, date
 from typing import Dict, List, Optional, Any, Tuple
 from calendar import month_name
+
+# Импорт Supabase manager
+try:
+    from .supabase_manager import (
+        use_supabase,
+        supabase_to_dataframe,
+        supabase_insert,
+        supabase_update,
+        supabase_upsert,
+        supabase_delete,
+        supabase_select,
+        dataframe_to_supabase
+    )
+    SUPABASE_MODULE_AVAILABLE = True
+except ImportError:
+    SUPABASE_MODULE_AVAILABLE = False
+    print("⚠️ Supabase manager not available, using local pickle storage")
 
 
 # Путь к файлу хранения финансовых данных
@@ -44,14 +62,27 @@ def create_empty_financials_df() -> pd.DataFrame:
 
 
 def load_financials() -> pd.DataFrame:
-    """Загружает финансовые данные из файла или создает новый DataFrame"""
+    """Загружает финансовые данные из Supabase или файла"""
+    # Проверяем, используем ли Supabase
+    if SUPABASE_MODULE_AVAILABLE and use_supabase():
+        try:
+            df = supabase_to_dataframe('program_financials', order_by='year.desc,month.desc')
+            if not df.empty:
+                print(f"✅ Loaded {len(df)} financial records from Supabase")
+                return df
+            else:
+                return create_empty_financials_df()
+        except Exception as e:
+            print(f"⚠️ Error loading financials from Supabase: {e}")
+            # Fallback to local
+    
+    # Локальное хранилище (pickle)
     ensure_data_directory()
     
     try:
         if os.path.exists(FINANCIALS_FILE):
             with open(FINANCIALS_FILE, 'rb') as f:
                 df = pickle.load(f)
-                # Проверка структуры
                 if isinstance(df, pd.DataFrame) and not df.empty:
                     return df
     except Exception as e:
@@ -61,7 +92,23 @@ def load_financials() -> pd.DataFrame:
 
 
 def save_financials(df: pd.DataFrame) -> bool:
-    """Сохраняет финансовые данные в файл"""
+    """Сохраняет финансовые данные в Supabase или файл"""
+    # Проверяем, используем ли Supabase
+    if SUPABASE_MODULE_AVAILABLE and use_supabase():
+        try:
+            df_to_save = df.copy()
+            if 'id' in df_to_save.columns:
+                df_to_save = df_to_save.drop(columns=['id'])
+            
+            success = dataframe_to_supabase(df_to_save, 'program_financials')
+            if success:
+                print(f"✅ Saved {len(df)} financial records to Supabase")
+                return True
+        except Exception as e:
+            print(f"⚠️ Error saving financials to Supabase: {e}")
+            # Fallback to local
+    
+    # Локальное хранилище (pickle)
     ensure_data_directory()
     try:
         with open(FINANCIALS_FILE, 'wb') as f:

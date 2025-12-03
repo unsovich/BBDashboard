@@ -1,7 +1,7 @@
 """
 Модуль управления данными кампаний
 Отвечает за хранение, загрузку и базовые операции CRUD
-Использует JSON для хранения и поддерживает автоматические бэкапы.
+Поддерживает Supabase (облако) и JSON (локальное хранилище)
 """
 
 import pandas as pd
@@ -11,6 +11,22 @@ import shutil
 import glob
 from datetime import datetime, date
 from typing import Dict, List, Optional, Any
+
+# Импорт Supabase manager
+try:
+    from .supabase_manager import (
+        use_supabase,
+        supabase_to_dataframe,
+        supabase_insert,
+        supabase_update,
+        supabase_delete,
+        supabase_select,
+        dataframe_to_supabase
+    )
+    SUPABASE_MODULE_AVAILABLE = True
+except ImportError:
+    SUPABASE_MODULE_AVAILABLE = False
+    print("⚠️ Supabase manager not available, using local storage only")
 
 # Пути к файлам
 DATA_DIR = "data"
@@ -114,7 +130,22 @@ def create_empty_campaigns_df() -> pd.DataFrame:
 
 
 def load_campaigns() -> pd.DataFrame:
-    """Загружает кампании из JSON файла"""
+    """Загружает кампании из Supabase или JSON файла"""
+    # Проверяем, используем ли Supabase
+    if SUPABASE_MODULE_AVAILABLE and use_supabase():
+        try:
+            df = supabase_to_dataframe('campaigns', order_by='created_at.desc')
+            if not df.empty:
+                print(f"✅ Loaded {len(df)} campaigns from Supabase")
+                return df
+            else:
+                print("📊 No campaigns in Supabase, returning empty DataFrame")
+                return create_empty_campaigns_df()
+        except Exception as e:
+            print(f"⚠️ Error loading from Supabase, falling back to local: {e}")
+            # Fallback to local storage
+    
+    # Локальное хранилище (JSON)
     ensure_directories()
     
     # Попытка миграции, если есть старый файл и нет нового
@@ -129,8 +160,6 @@ def load_campaigns() -> pd.DataFrame:
             for col in date_cols:
                 if col in df.columns:
                     df[col] = pd.to_datetime(df[col]).dt.date
-                    # created_at и updated_at могут быть datetime, но для совместимости пока date
-                    # Если нужны datetime, можно убрать .dt.date для них
             
             # created_at/updated_at лучше оставить datetime
             if 'created_at' in df.columns:
@@ -142,9 +171,7 @@ def load_campaigns() -> pd.DataFrame:
                 return df
                 
         except ValueError as e:
-            # Ошибка декодирования JSON или пустой файл
             print(f"Ошибка чтения JSON кампаний: {e}")
-            # Бэкапим поврежденный файл
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             corrupted_path = f"{CAMPAIGNS_FILE_JSON}.corrupted.{timestamp}"
             shutil.copy2(CAMPAIGNS_FILE_JSON, corrupted_path)
@@ -154,14 +181,33 @@ def load_campaigns() -> pd.DataFrame:
 
 
 def save_campaigns(df: pd.DataFrame) -> bool:
-    """Сохраняет кампании в JSON файл с бэкапом"""
+    """Сохраняет кампании в Supabase или JSON файл"""
+    # Проверяем, используем ли Supabase
+    if SUPABASE_MODULE_AVAILABLE and use_supabase():
+        try:
+            # Удаляем колонку 'id' если она есть (автоинкремент в Supabase)
+            df_to_save = df.copy()
+            if 'id' in df_to_save.columns:
+                df_to_save = df_to_save.drop(columns=['id'])
+            
+            # Полная перезапись: сначала удаляем все, потом вставляем
+            # Это простой подход, для больших данных лучше использовать upsert
+            success = dataframe_to_supabase(df_to_save, 'campaigns')
+            if success:
+                print(f"✅ Saved {len(df)} campaigns to Supabase")
+                return True
+            else:
+                print("⚠️ Failed to save to Supabase, falling back to local")
+                # Fallback to local
+        except Exception as e:
+            print(f"⚠️ Error saving to Supabase, falling back to local: {e}")
+            # Fallback to local storage
+    
+    # Локальное хранилище (JSON)
     ensure_directories()
     
     try:
-        # Создаем бэкап перед записью
         create_backup(CAMPAIGNS_FILE_JSON)
-        
-        # Сохраняем
         df.to_json(CAMPAIGNS_FILE_JSON, orient='records', date_format='iso', indent=2, force_ascii=False)
         return True
     except Exception as e:
@@ -383,17 +429,28 @@ def create_empty_collection_history_df() -> pd.DataFrame:
 
 
 def load_collection_history() -> pd.DataFrame:
-    """Загружает историю сборов из JSON файла"""
+    """Загружает историю сборов из Supabase или JSON файла"""
+    # Проверяем, используем ли Supabase
+    if SUPABASE_MODULE_AVAILABLE and use_supabase():
+        try:
+            df = supabase_to_dataframe('collection_history', order_by='update_date.desc')
+            if not df.empty:
+                return df
+            else:
+                return create_empty_collection_history_df()
+        except Exception as e:
+            print(f"⚠️ Error loading collection history from Supabase: {e}")
+            # Fallback to local
+    
+    # Локальное хранилище
     ensure_directories()
     
-    # Миграция
     migrate_pickle_to_json(COLLECTION_HISTORY_FILE_PKL, COLLECTION_HISTORY_FILE_JSON)
     
     if os.path.exists(COLLECTION_HISTORY_FILE_JSON):
         try:
             df = pd.read_json(COLLECTION_HISTORY_FILE_JSON, orient='records')
             
-            # Восстановление дат
             if 'update_date' in df.columns:
                 df['update_date'] = pd.to_datetime(df['update_date']).dt.date
             if 'created_at' in df.columns:
@@ -403,7 +460,6 @@ def load_collection_history() -> pd.DataFrame:
                 return df
         except ValueError as e:
             print(f"Ошибка чтения JSON истории: {e}")
-            # Бэкапим
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             corrupted_path = f"{COLLECTION_HISTORY_FILE_JSON}.corrupted.{timestamp}"
             shutil.copy2(COLLECTION_HISTORY_FILE_JSON, corrupted_path)
@@ -412,7 +468,21 @@ def load_collection_history() -> pd.DataFrame:
 
 
 def save_collection_history(df: pd.DataFrame) -> bool:
-    """Сохраняет историю сборов в JSON файл с бэкапом"""
+    """Сохраняет историю сборов в Supabase или JSON файл"""
+    if SUPABASE_MODULE_AVAILABLE and use_supabase():
+        try:
+            df_to_save = df.copy()
+            if 'id' in df_to_save.columns:
+                df_to_save = df_to_save.drop(columns=['id'])
+            
+            success = dataframe_to_supabase(df_to_save, 'collection_history')
+            if success:
+                return True
+        except Exception as e:
+            print(f"⚠️ Error saving collection history to Supabase: {e}")
+            # Fallback to local
+    
+    # Локальное хранилище
     ensure_directories()
     
     try:
