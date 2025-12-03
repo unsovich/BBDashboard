@@ -371,6 +371,60 @@ def dataframe_to_supabase(df: pd.DataFrame, table: str) -> bool:
     return True
 
 
+def replace_table_data(df: pd.DataFrame, table: str) -> bool:
+    """
+    Заменяет все данные в таблице Supabase на данные из DataFrame
+    Удаляет все существующие записи, затем вставляет новые
+    
+    Args:
+        df: DataFrame для загрузки
+        table: название таблицы
+        
+    Returns:
+        True если успешно
+    """
+    client = init_supabase_client()
+    if client is None:
+        print(f"⚠️ Cannot connect to Supabase, skipping replace for {table}")
+        return False
+    
+    try:
+        # Шаг 1: Удаляем все существующие записи
+        print(f"🗑️ Deleting all existing records from {table}...")
+        delete_response = client.table(table).delete().neq('id', 0).execute()
+        print(f"✅ Deleted existing records from {table}")
+        
+        # Шаг 2: Вставляем новые данные
+        if df.empty:
+            print(f"📊 DataFrame is empty, {table} is now empty")
+            return True
+        
+        # Конвертируем DataFrame в список словарей
+        records = df.to_dict('records')
+        
+        # Загружаем батчами по 1000 записей
+        batch_size = 1000
+        total_batches = (len(records) + batch_size - 1) // batch_size
+        
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            
+            print(f"📤 Uploading batch {batch_num}/{total_batches} ({len(batch)} records)...")
+            
+            result = supabase_insert(table, batch)
+            if result is None:
+                print(f"❌ Failed to upload batch {batch_num}")
+                return False
+        
+        print(f"✅ Successfully replaced all data in {table} ({len(records)} records)")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error replacing data in {table}: {e}")
+        return False
+
+
 def supabase_to_dataframe(
     table: str,
     filters: Optional[Dict[str, Any]] = None,

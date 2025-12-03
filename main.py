@@ -62,6 +62,7 @@ try:
         use_supabase,
         supabase_to_dataframe,
         dataframe_to_supabase,
+        replace_table_data,
         get_storage_mode,
         test_connection
     )
@@ -413,7 +414,9 @@ def save_kpi_history(df):
             if 'updated_at' not in df_to_save.columns:
                 df_to_save['updated_at'] = datetime.now()
             
-            success = dataframe_to_supabase(df_to_save, 'kpi_history')
+            # ИСПРАВЛЕНИЕ: Используем replace_table_data вместо dataframe_to_supabase
+            # Это удаляет все старые записи перед вставкой новых, предотвращая дубликаты
+            success = replace_table_data(df_to_save, 'kpi_history')
             if success:
                 print(f"✅ Saved {len(df)} KPI records to Supabase")
                 return
