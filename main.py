@@ -1250,13 +1250,14 @@ if menu == "Сводный Дашборд":
             start_date, end_date, granularity
         )
     else:
-        # Если KPI данных нет, создаем пустые датафреймы
-        aggregated_data = pd.DataFrame()
-        df_viz_all = pd.DataFrame()
-        df_viz_krasnodar = pd.DataFrame()
-        df_viz_krymsk = pd.DataFrame()
-        df_viz_np = pd.DataFrame()
-        df_viz_yz = pd.DataFrame()
+        # Если KPI данных нет, создаем пустые датафреймы с правильной структурой
+        empty_df_structure = pd.DataFrame(columns=['Название', 'Категория', 'Минимум', 'Цель', 'Факт', 'Период'])
+        aggregated_data = pd.DataFrame() # aggregated_data используется по-другому, но для безопасности
+        df_viz_all = empty_df_structure.copy()
+        df_viz_krasnodar = empty_df_structure.copy()
+        df_viz_krymsk = empty_df_structure.copy()
+        df_viz_np = empty_df_structure.copy()
+        df_viz_yz = empty_df_structure.copy()
         df_source_with_agg = df_source
     
     prog_tabs = st.tabs(["Верь в себя", "Нужна помощь", "ЯЖивой"])
