@@ -972,7 +972,7 @@ def render_program_financials_chart(program_name, start_date, end_date, is_aggre
             )
         )
         
-        st.plotly_chart(fig_finances, use_container_width=True)
+        st.plotly_chart(fig_finances, use_container_width=True, key=f"fin_chart_{program_name.replace(' ', '_').replace('-', '_')}")
     
     with col2:
         # График окупаемости
@@ -1005,7 +1005,7 @@ def render_program_financials_chart(program_name, start_date, end_date, is_aggre
             )
         )
         
-        st.plotly_chart(fig_profitability, use_container_width=True)
+        st.plotly_chart(fig_profitability, use_container_width=True, key=f"prof_chart_{program_name.replace(' ', '_').replace('-', '_')}")
 
 
 def render_company_wide_financials_chart(start_date, end_date):
@@ -1105,7 +1105,7 @@ def render_company_wide_financials_chart(start_date, end_date):
             )
         )
         
-        st.plotly_chart(fig_finances, use_container_width=True)
+        st.plotly_chart(fig_finances, use_container_width=True, key="company_wide_fin_chart")
     
     with col2:
         # График окупаемости
@@ -1135,7 +1135,7 @@ def render_company_wide_financials_chart(start_date, end_date):
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
         
-        st.plotly_chart(fig_profitability, use_container_width=True)
+        st.plotly_chart(fig_profitability, use_container_width=True, key="company_wide_prof_chart")
 
 
     
