@@ -573,11 +573,11 @@ if 'kpi_history' not in st.session_state:
                     st.session_state.data_source = "recovered_from_supabase"
                     print(f"✅ Recovered {len(df_from_supabase)} records from Supabase")
                 else:
-                    # Supabase действительно пуст - это первый запуск
-                    st.session_state.kpi_history = generate_mock_data()
-                    save_to_file(st.session_state.kpi_history)
-                    st.session_state.data_source = "generated_mock_data"
-                    st.info("ℹ️ Первый запуск: создана база с тестовыми данными. Вы можете удалить их в разделе 'История (Редактор)'.")
+                    # Supabase пуст - начинаем с пустой базы (НЕ генерируем mock данные)
+                    st.session_state.kpi_history = pd.DataFrame(columns=REQUIRED_COLUMNS)
+                    st.session_state.data_source = "empty_first_run"
+                    print("📊 First run: starting with empty database")
+                    st.info("ℹ️ Первый запуск: база данных пуста. Добавьте первые записи в разделе 'Ввод данных KPI'.")
             except Exception as e:
                 print(f"⚠️ Error checking Supabase: {e}")
                 # В крайнем случае начинаем с пустой базы
@@ -585,11 +585,11 @@ if 'kpi_history' not in st.session_state:
                 st.session_state.data_source = "empty_fallback"
                 st.warning("⚠️ Не удалось загрузить данные. Начинаем с пустой базы.")
         else:
-            # Supabase недоступен и нет локального файла - первый запуск
-            st.session_state.kpi_history = generate_mock_data()
-            save_to_file(st.session_state.kpi_history)
-            st.session_state.data_source = "generated_mock_data"
-            st.info("ℹ️ Первый запуск: создана база с тестовыми данными. Вы можете удалить их в разделе 'История (Редактор)'.")
+            # Supabase недоступен и нет локального файла - начинаем с пустой базы
+            st.session_state.kpi_history = pd.DataFrame(columns=REQUIRED_COLUMNS)
+            st.session_state.data_source = "empty_first_run"
+            st.info("ℹ️ Первый запуск: база данных пуста. Добавьте первые записи в разделе 'Ввод данных KPI'.")
+            print("📊 First run without Supabase: starting with empty database")
     
     st.session_state.data_initialized = True
     print(f"📊 Data initialized from: {st.session_state.data_source}")
