@@ -1212,13 +1212,7 @@ if menu == "Сводный Дашборд":
     if df_viz.empty:
         st.warning("Нет данных для отображения за выбранный период. Проверьте вкладку 'История (Редактор)'.")
     else:
-        st.subheader("Ключевые показатели")
-        
-        # Общий финансовый показатель
-        kpi_finance = "Выполнение общего плана фандрайзинга, %"
-        st.plotly_chart(render_chart(df_viz, kpi_finance), use_container_width=True)
 
-        st.divider()
         st.subheader("Программы")
         
         # Агрегируем данные по центрам перед отображением
@@ -1420,6 +1414,13 @@ if menu == "Сводный Дашборд":
             # Добавляем статистику
             stats_yz_adapt = calculate_kpi_summary(df_source, "Индекс достижения социальной адаптации", start_date, end_date, category_filter="ЯЖивой")
             st.metric("Среднее в месяц", f"{stats_yz_adapt['monthly_avg']:.2f}")
+        
+        # --- ОБЩИЙ ФИНАНСОВЫЙ ПОКАЗАТЕЛЬ (внизу) ---
+        st.divider()
+        st.subheader("Ключевые показатели")
+        
+        kpi_finance = "Выполнение общего плана фандрайзинга, %"
+        st.plotly_chart(render_chart(df_viz, kpi_finance), use_container_width=True)
 
 
 # --- 1.1 ДИНАМИКА СБОРОВ (НОВЫЙ РАЗДЕЛ) ---
