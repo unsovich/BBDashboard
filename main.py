@@ -2284,29 +2284,109 @@ elif menu == "Финансы программ":
             if history_df.empty:
                 st.info("📭 Нет данных для отображения")
             else:
-                # Форматируем для отображения
-                display_df = history_df.copy()
+                st.info("""
+                **Инструкция:**
+                * Для **редактирования**: кликните дважды по ячейке, измените значение и нажмите Enter
+                * Для **удаления**: выделите строки (галочкой слева) и нажмите кнопку "Удалить выбранные"
+                * После внесения изменений нажмите **"Сохранить изменения"**
+                """)
                 
-                # Добавляем название месяца
+                # Подготавливаем данные для редактора
+                edit_df = history_df.copy()
+                
+                # Добавляем название месяца для удобства
                 month_names = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
                               "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
                 
-                display_df['Месяц'] = display_df['month'].apply(lambda x: month_names[int(x)-1] if 1 <= x <= 12 else str(x))
-                display_df['Год'] = display_df['year'].astype(int)
-                display_df['Программа'] = display_df['program']
-                display_df['Доходы'] = display_df['income'].apply(lambda x: f"{x:,.0f} ₽")
-                display_df['Расходы'] = display_df['expenses'].apply(lambda x: f"{x:,.0f} ₽")
-                display_df['Окупаемость'] = display_df['profitability'].apply(lambda x: f"{x:.2f}%")
-                display_df['Примечание'] = display_df['note'].fillna('')
+                edit_df['month_name'] = edit_df['month'].apply(lambda x: month_names[int(x)-1] if 1 <= x <= 12 else str(x))
                 
-                # Выбираем колонки для отображения
-                display_columns = ['Программа', 'Год', 'Месяц', 'Доходы', 'Расходы', 'Окупаемость', 'Примечание']
+                # Конфигурация колонок для редактора
+                column_config = {
+                    "record_id": st.column_config.TextColumn("ID", disabled=True, width="small"),
+                    "program": st.column_config.SelectboxColumn(
+                        "Программа",
+                        options=PROGRAMS,
+                        required=True,
+                        width="medium"
+                    ),
+                    "year": st.column_config.NumberColumn(
+                        "Год",
+                        min_value=2020,
+                        max_value=2030,
+                        step=1,
+                        required=True,
+                        width="small"
+                    ),
+                    "month": st.column_config.NumberColumn(
+                        "Месяц",
+                        min_value=1,
+                        max_value=12,
+                        step=1,
+                        required=True,
+                        width="small"
+                    ),
+                    "month_name": st.column_config.TextColumn("Название месяца", disabled=True, width="small"),
+                    "income": st.column_config.NumberColumn(
+                        "Доходы, ₽",
+                        min_value=0.0,
+                        step=1000.0,
+                        format="%.2f",
+                        required=True,
+                        width="medium"
+                    ),
+                    "expenses": st.column_config.NumberColumn(
+                        "Расходы, ₽",
+                        min_value=0.0,
+                        step=1000.0,
+                        format="%.2f",
+                        required=True,
+                        width="medium"
+                    ),
+                    "profitability": st.column_config.NumberColumn(
+                        "Окупаемость, %",
+                        format="%.2f",
+                        disabled=True,
+                        width="small"
+                    ),
+                    "note": st.column_config.TextColumn("Примечание", width="large"),
+                    "created_at": None,  # Скрываем
+                    "updated_at": None   # Скрываем
+                }
                 
-                st.dataframe(
-                    display_df[display_columns],
+                # Редактируемая таблица
+                edited_df = st.data_editor(
+                    edit_df,
+                    column_config=column_config,
                     use_container_width=True,
-                    hide_index=True
+                    num_rows="dynamic",  # Позволяет удалять строки
+                    hide_index=True,
+                    key="financial_data_editor"
                 )
+                
+                # Кнопки управления
+                col_save, col_delete = st.columns([1, 1])
+                
+                with col_save:
+                    if st.button("💾 Сохранить изменения", use_container_width=True, type="primary"):
+                        # Пересчитываем окупаемость для всех записей
+                        edited_df['profitability'] = edited_df.apply(
+                            lambda row: calculate_profitability(row['income'], row['expenses']),
+                            axis=1
+                        )
+                        
+                        # Обновляем updated_at
+                        edited_df['updated_at'] = datetime.now()
+                        
+                        # Удаляем вспомогательную колонку
+                        if 'month_name' in edited_df.columns:
+                            edited_df = edited_df.drop(columns=['month_name'])
+                        
+                        # Сохраняем
+                        if save_financials(edited_df):
+                            st.success("✅ Изменения сохранены!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Ошибка сохранения данных")
                 
                 # Статистика
                 st.divider()
@@ -2315,11 +2395,11 @@ elif menu == "Финансы программ":
                 stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
                 
                 with stat_col1:
-                    total_income = display_df['income'].sum()
+                    total_income = edited_df['income'].sum()
                     st.metric("Общие доходы", f"{total_income:,.0f} ₽")
                 
                 with stat_col2:
-                    total_expenses = display_df['expenses'].sum()
+                    total_expenses = edited_df['expenses'].sum()
                     st.metric("Общие расходы", f"{total_expenses:,.0f} ₽")
                 
                 with stat_col3:
@@ -2327,7 +2407,7 @@ elif menu == "Финансы программ":
                     st.metric("Прибыль/Убыток", f"{total_profit:,.0f} ₽")
                 
                 with stat_col4:
-                    avg_profitability = display_df['profitability'].mean()
+                    avg_profitability = edited_df['profitability'].mean()
                     st.metric("Средняя окупаемость", f"{avg_profitability:.2f}%")
 
 
