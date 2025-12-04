@@ -1006,6 +1006,23 @@ def render_program_financials_chart(program_name, start_date, end_date, is_aggre
         )
         
         st.plotly_chart(fig_profitability, use_container_width=True, key=f"prof_chart_{program_name.replace(' ', '_').replace('-', '_')}")
+    
+    # Отображаем итоговые показатели
+    st.divider()
+    
+    metric_col1, metric_col2, metric_col3 = st.columns(3)
+    
+    with metric_col1:
+        total_income = df['income'].sum()
+        st.metric("💰 Всего доходов", f"{total_income:,.0f} ₽")
+    
+    with metric_col2:
+        total_expenses = df['expenses'].sum()
+        st.metric("💸 Всего расходов", f"{total_expenses:,.0f} ₽")
+    
+    with metric_col3:
+        avg_profitability = df['profitability'].mean()
+        st.metric("📊 Средняя окупаемость", f"{avg_profitability:.2f}%")
 
 
 def render_company_wide_financials_chart(start_date, end_date):
