@@ -1209,13 +1209,18 @@ if menu == "Сводный Дашборд":
     df_source = st.session_state.kpi_history.copy()
     df_viz = filter_data_by_period(df_source, start_date, end_date, granularity)
 
-    if df_viz.empty:
-        st.warning("Нет данных для отображения за выбранный период. Проверьте вкладку 'История (Редактор)'.")
-    else:
+    # Проверяем наличие KPI данных, но продолжаем отображение финансовых данных
+    kpi_data_available = not df_viz.empty
+    
+    if not kpi_data_available:
+        st.info("ℹ️ KPI данные отсутствуют за выбранный период. Отображаются только финансовые показатели программ.")
+    
+    # ВСЕГДА отображаем программы и их финансовые данные
 
-        st.subheader("Программы")
-        
-        # Агрегируем данные по центрам перед отображением
+    st.subheader("Программы")
+    
+    # Агрегируем данные по центрам перед отображением (только если есть KPI данные)
+    if kpi_data_available:
         aggregated_data = aggregate_center_kpis(df_source, start_date, end_date)
         
         # Объединяем исходные данные с агрегированными
@@ -1244,171 +1249,180 @@ if menu == "Сводный Дашборд":
             df_source[df_source['Категория'].str.contains('ЯЖивой', na=False)],
             start_date, end_date, granularity
         )
+    else:
+        # Если KPI данных нет, создаем пустые датафреймы
+        aggregated_data = pd.DataFrame()
+        df_viz_all = pd.DataFrame()
+        df_viz_krasnodar = pd.DataFrame()
+        df_viz_krymsk = pd.DataFrame()
+        df_viz_np = pd.DataFrame()
+        df_viz_yz = pd.DataFrame()
+        df_source_with_agg = df_source
+    
+    prog_tabs = st.tabs(["Верь в себя", "Нужна помощь", "ЯЖивой"])
         
-        prog_tabs = st.tabs(["Верь в себя", "Нужна помощь", "ЯЖивой"])
+    # --- "Верь в себя" с подвкладками по центрам ---
+    with prog_tabs[0]:
+        st.markdown("### Центры развития программы \"Верь в себя\"")
         
-        # --- "Верь в себя" с подвкладками по центрам ---
-        with prog_tabs[0]:
-            st.markdown("### Центры развития программы \"Верь в себя\"")
-            
-            center_tabs = st.tabs(["Краснодар", "Крымск", "Общие"])
-            
-            # Краснодар
-            with center_tabs[0]:
-                st.markdown("#### Центр развития: Краснодар")
-                
-                # Финансовые показатели
-                render_program_financials_chart("Верь в себя - Краснодар", start_date, end_date)
-                
-                st.divider()
-                st.markdown("**KPI показатели:**")
-                
-                c_vs_kr1, c_vs_kr2 = st.columns(2)
-                with c_vs_kr1:
-                    st.plotly_chart(render_chart(df_viz_krasnodar, "Количество проведенных занятий (факт/план)", category_filter="Краснодар"), use_container_width=True, key="chart_vs_kr_classes")
-                    # Добавляем статистику
-                    stats_classes = calculate_kpi_summary(df_source, "Количество проведенных занятий (факт/план)", start_date, end_date, category_filter="Краснодар")
-                    col_stat1, col_stat2 = st.columns(2)
-                    with col_stat1:
-                        st.metric("Всего за период", f"{stats_classes['total']:.0f}")
-                    with col_stat2:
-                        st.metric("Среднее в месяц", f"{stats_classes['monthly_avg']:.1f}")
-                
-                with c_vs_kr2:
-                    st.plotly_chart(render_chart(df_viz_krasnodar, "Количество обслуженных благополучателей", category_filter="Краснодар"), use_container_width=True, key="chart_vs_kr_beneficiaries")
-                    # Добавляем статистику
-                    stats_benef = calculate_kpi_summary(df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="Краснодар")
-                    st.metric("Среднее в месяц", f"{stats_benef['monthly_avg']:.1f}")
-                
-                st.plotly_chart(render_chart(df_viz_krasnodar, "Индекс достижения социальной реабилитации", category_filter="Краснодар"), use_container_width=True, key="chart_vs_kr_social_rehab")
-            
-            # Крымск
-            with center_tabs[1]:
-                st.markdown("#### Центр развития: Крымск")
-                
-                # Финансовые показатели
-                render_program_financials_chart("Верь в себя - Крымск", start_date, end_date)
-                
-                st.divider()
-                st.markdown("**KPI показатели:**")
-                
-                c_vs_krm1, c_vs_krm2 = st.columns(2)
-                with c_vs_krm1:
-                    st.plotly_chart(render_chart(df_viz_krymsk, "Количество проведенных занятий (факт/план)", category_filter="Крымск"), use_container_width=True, key="chart_vs_krm_classes")
-                    # Добавляем статистику
-                    stats_classes_krm = calculate_kpi_summary(df_source, "Количество проведенных занятий (факт/план)", start_date, end_date, category_filter="Крымск")
-                    col_stat1, col_stat2 = st.columns(2)
-                    with col_stat1:
-                        st.metric("Всего за период", f"{stats_classes_krm['total']:.0f}")
-                    with col_stat2:
-                        st.metric("Среднее в месяц", f"{stats_classes_krm['monthly_avg']:.1f}")
-                
-                with c_vs_krm2:
-                    st.plotly_chart(render_chart(df_viz_krymsk, "Количество обслуженных благополучателей", category_filter="Крымск"), use_container_width=True, key="chart_vs_krm_beneficiaries")
-                    # Добавляем статистику
-                    stats_benef_krm = calculate_kpi_summary(df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="Крымск")
-                    st.metric("Среднее в месяц", f"{stats_benef_krm['monthly_avg']:.1f}")
-                
-                st.plotly_chart(render_chart(df_viz_krymsk, "Индекс достижения социальной реабилитации", category_filter="Крымск"), use_container_width=True, key="chart_vs_krm_social_rehab")
-
-            
-            
-            
-            # Общие (агрегированные)
-            with center_tabs[2]:
-                st.markdown("#### Общие показатели (Краснодар + Крымск)")
-                
-                # Финансовые показатели - агрегированные
-                render_program_financials_chart("Верь в себя - Общие", start_date, end_date, is_aggregated=True)
-                
-                st.divider()
-                st.markdown("**Агрегированные KPI показатели:**")
-                
-                c_vs_all1, c_vs_all2 = st.columns(2)
-                with c_vs_all1:
-                    st.plotly_chart(render_chart(df_viz_all, "Количество проведенных занятий (факт/план)", category_filter="Общие"), use_container_width=True, key="chart_vs_all_classes")
-                    # Добавляем статистику
-                    stats_classes_all = calculate_kpi_summary(df_source_with_agg if not aggregated_data.empty else df_source, "Количество проведенных занятий (факт/план)", start_date, end_date, category_filter="Общие")
-                    col_stat1, col_stat2 = st.columns(2)
-                    with col_stat1:
-                        st.metric("Всего за период", f"{stats_classes_all['total']:.0f}")
-                    with col_stat2:
-                        st.metric("Среднее в месяц", f"{stats_classes_all['monthly_avg']:.1f}")
-                
-                with c_vs_all2:
-                    st.plotly_chart(render_chart(df_viz_all, "Количество обслуженных благополучателей", category_filter="Общие"), use_container_width=True, key="chart_vs_all_beneficiaries")
-                    # Добавляем статистику
-                    stats_benef_all = calculate_kpi_summary(df_source_with_agg if not aggregated_data.empty else df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="Общие")
-                    st.metric("Среднее в месяц", f"{stats_benef_all['monthly_avg']:.1f}")
-                
-                st.plotly_chart(render_chart(df_viz_all, "Индекс достижения социальной реабилитации", category_filter="Общие"), use_container_width=True, key="chart_vs_all_social_rehab")
-
-        # --- "Нужна помощь" ---
-        with prog_tabs[1]:
-            st.markdown("### Программа \"Нужна помощь\"")
+        center_tabs = st.tabs(["Краснодар", "Крымск", "Общие"])
+        
+        # Краснодар
+        with center_tabs[0]:
+            st.markdown("#### Центр развития: Краснодар")
             
             # Финансовые показатели
-            render_program_financials_chart("Нужна помощь", start_date, end_date)
+            render_program_financials_chart("Верь в себя - Краснодар", start_date, end_date)
             
             st.divider()
             st.markdown("**KPI показатели:**")
             
-            c_np1, c_np2 = st.columns(2)
-            with c_np1:
-                st.plotly_chart(render_chart(df_viz_np, "Количество обслуженных благополучателей", category_filter="Нужна помощь"), use_container_width=True, key="chart_np_beneficiaries")
+            c_vs_kr1, c_vs_kr2 = st.columns(2)
+            with c_vs_kr1:
+                st.plotly_chart(render_chart(df_viz_krasnodar, "Количество проведенных занятий (факт/план)", category_filter="Краснодар"), use_container_width=True, key="chart_vs_kr_classes")
                 # Добавляем статистику
-                stats_np_benef = calculate_kpi_summary(df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="Нужна помощь")
+                stats_classes = calculate_kpi_summary(df_source, "Количество проведенных занятий (факт/план)", start_date, end_date, category_filter="Краснодар")
                 col_stat1, col_stat2 = st.columns(2)
                 with col_stat1:
-                    st.metric("Всего за период", f"{stats_np_benef['total']:.0f}")
+                    st.metric("Всего за период", f"{stats_classes['total']:.0f}")
                 with col_stat2:
-                    st.metric("Среднее в месяц", f"{stats_np_benef['monthly_avg']:.1f}")
+                    st.metric("Среднее в месяц", f"{stats_classes['monthly_avg']:.1f}")
             
-            with c_np2:
-                st.plotly_chart(render_chart(df_viz_np, "Объем предоставленной помощи (денежная форма)", category_filter="Нужна помощь"), use_container_width=True, key="chart_np_money")
+            with c_vs_kr2:
+                st.plotly_chart(render_chart(df_viz_krasnodar, "Количество обслуженных благополучателей", category_filter="Краснодар"), use_container_width=True, key="chart_vs_kr_beneficiaries")
                 # Добавляем статистику
-                stats_np_money = calculate_kpi_summary(df_source, "Объем предоставленной помощи (денежная форма)", start_date, end_date, category_filter="Нужна помощь")
+                stats_benef = calculate_kpi_summary(df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="Краснодар")
+                st.metric("Среднее в месяц", f"{stats_benef['monthly_avg']:.1f}")
+            
+            st.plotly_chart(render_chart(df_viz_krasnodar, "Индекс достижения социальной реабилитации", category_filter="Краснодар"), use_container_width=True, key="chart_vs_kr_social_rehab")
+        
+        # Крымск
+        with center_tabs[1]:
+            st.markdown("#### Центр развития: Крымск")
+            
+            # Финансовые показатели
+            render_program_financials_chart("Верь в себя - Крымск", start_date, end_date)
+            
+            st.divider()
+            st.markdown("**KPI показатели:**")
+            
+            c_vs_krm1, c_vs_krm2 = st.columns(2)
+            with c_vs_krm1:
+                st.plotly_chart(render_chart(df_viz_krymsk, "Количество проведенных занятий (факт/план)", category_filter="Крымск"), use_container_width=True, key="chart_vs_krm_classes")
+                # Добавляем статистику
+                stats_classes_krm = calculate_kpi_summary(df_source, "Количество проведенных занятий (факт/план)", start_date, end_date, category_filter="Крымск")
                 col_stat1, col_stat2 = st.columns(2)
                 with col_stat1:
-                    st.metric("Всего за период", f"{stats_np_money['total']:,.0f} ₽")
+                    st.metric("Всего за период", f"{stats_classes_krm['total']:.0f}")
                 with col_stat2:
-                    st.metric("Среднее в месяц", f"{stats_np_money['monthly_avg']:,.0f} ₽")
+                    st.metric("Среднее в месяц", f"{stats_classes_krm['monthly_avg']:.1f}")
             
-            st.plotly_chart(render_chart(df_viz_np, "Коэффициент своевременности рассмотрения заявок", category_filter="Нужна помощь"), use_container_width=True, key="chart_np_timeliness")
+            with c_vs_krm2:
+                st.plotly_chart(render_chart(df_viz_krymsk, "Количество обслуженных благополучателей", category_filter="Крымск"), use_container_width=True, key="chart_vs_krm_beneficiaries")
+                # Добавляем статистику
+                stats_benef_krm = calculate_kpi_summary(df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="Крымск")
+                st.metric("Среднее в месяц", f"{stats_benef_krm['monthly_avg']:.1f}")
+            
+            st.plotly_chart(render_chart(df_viz_krymsk, "Индекс достижения социальной реабилитации", category_filter="Крымск"), use_container_width=True, key="chart_vs_krm_social_rehab")
+
+        
+        
+        
+        # Общие (агрегированные)
+        with center_tabs[2]:
+            st.markdown("#### Общие показатели (Краснодар + Крымск)")
+            
+            # Финансовые показатели - агрегированные
+            render_program_financials_chart("Верь в себя - Общие", start_date, end_date, is_aggregated=True)
+            
+            st.divider()
+            st.markdown("**Агрегированные KPI показатели:**")
+            
+            c_vs_all1, c_vs_all2 = st.columns(2)
+            with c_vs_all1:
+                st.plotly_chart(render_chart(df_viz_all, "Количество проведенных занятий (факт/план)", category_filter="Общие"), use_container_width=True, key="chart_vs_all_classes")
+                # Добавляем статистику
+                stats_classes_all = calculate_kpi_summary(df_source_with_agg if not aggregated_data.empty else df_source, "Количество проведенных занятий (факт/план)", start_date, end_date, category_filter="Общие")
+                col_stat1, col_stat2 = st.columns(2)
+                with col_stat1:
+                    st.metric("Всего за период", f"{stats_classes_all['total']:.0f}")
+                with col_stat2:
+                    st.metric("Среднее в месяц", f"{stats_classes_all['monthly_avg']:.1f}")
+            
+            with c_vs_all2:
+                st.plotly_chart(render_chart(df_viz_all, "Количество обслуженных благополучателей", category_filter="Общие"), use_container_width=True, key="chart_vs_all_beneficiaries")
+                # Добавляем статистику
+                stats_benef_all = calculate_kpi_summary(df_source_with_agg if not aggregated_data.empty else df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="Общие")
+                st.metric("Среднее в месяц", f"{stats_benef_all['monthly_avg']:.1f}")
+            
+            st.plotly_chart(render_chart(df_viz_all, "Индекс достижения социальной реабилитации", category_filter="Общие"), use_container_width=True, key="chart_vs_all_social_rehab")
+
+    # --- "Нужна помощь" ---
+    with prog_tabs[1]:
+        st.markdown("### Программа \"Нужна помощь\"")
+        
+        # Финансовые показатели
+        render_program_financials_chart("Нужна помощь", start_date, end_date)
+        
+        st.divider()
+        st.markdown("**KPI показатели:**")
+        
+        c_np1, c_np2 = st.columns(2)
+        with c_np1:
+            st.plotly_chart(render_chart(df_viz_np, "Количество обслуженных благополучателей", category_filter="Нужна помощь"), use_container_width=True, key="chart_np_beneficiaries")
             # Добавляем статистику
-            stats_np_timeliness = calculate_kpi_summary(df_source, "Коэффициент своевременности рассмотрения заявок", start_date, end_date, category_filter="Нужна помощь")
-            st.metric("Среднее в месяц", f"{stats_np_timeliness['monthly_avg']:.2f}")
+            stats_np_benef = calculate_kpi_summary(df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="Нужна помощь")
+            col_stat1, col_stat2 = st.columns(2)
+            with col_stat1:
+                st.metric("Всего за период", f"{stats_np_benef['total']:.0f}")
+            with col_stat2:
+                st.metric("Среднее в месяц", f"{stats_np_benef['monthly_avg']:.1f}")
+        
+        with c_np2:
+            st.plotly_chart(render_chart(df_viz_np, "Объем предоставленной помощи (денежная форма)", category_filter="Нужна помощь"), use_container_width=True, key="chart_np_money")
+            # Добавляем статистику
+            stats_np_money = calculate_kpi_summary(df_source, "Объем предоставленной помощи (денежная форма)", start_date, end_date, category_filter="Нужна помощь")
+            col_stat1, col_stat2 = st.columns(2)
+            with col_stat1:
+                st.metric("Всего за период", f"{stats_np_money['total']:,.0f} ₽")
+            with col_stat2:
+                st.metric("Среднее в месяц", f"{stats_np_money['monthly_avg']:,.0f} ₽")
+        
+        st.plotly_chart(render_chart(df_viz_np, "Коэффициент своевременности рассмотрения заявок", category_filter="Нужна помощь"), use_container_width=True, key="chart_np_timeliness")
+        # Добавляем статистику
+        stats_np_timeliness = calculate_kpi_summary(df_source, "Коэффициент своевременности рассмотрения заявок", start_date, end_date, category_filter="Нужна помощь")
+        st.metric("Среднее в месяц", f"{stats_np_timeliness['monthly_avg']:.2f}")
 
-        # --- "ЯЖивой" ---
-        with prog_tabs[2]:
-            st.markdown("### Программа \"ЯЖивой\"")
-            
-            # Финансовые показатели
-            render_program_financials_chart("ЯЖивой", start_date, end_date)
-            
-            st.divider()
-            st.markdown("**KPI показатели:**")
-            
-            c_yz1, c_yz2 = st.columns(2)
-            with c_yz1:
-                st.plotly_chart(render_chart(df_viz_yz, "Количество обслуженных благополучателей", category_filter="ЯЖивой"), use_container_width=True, key="chart_yz_beneficiaries")
-                # Добавляем статистику
-                stats_yz_benef = calculate_kpi_summary(df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="ЯЖивой")
-                col_stat1, col_stat2 = st.columns(2)
-                with col_stat1:
-                    st.metric("Всего за период", f"{stats_yz_benef['total']:.0f}")
-                with col_stat2:
-                    st.metric("Среднее в месяц", f"{stats_yz_benef['monthly_avg']:.1f}")
-            
-            with c_yz2:
-                st.plotly_chart(render_chart(df_viz_yz, "Объем предоставленной целевой помощи", category_filter="ЯЖивой"), use_container_width=True, key="chart_yz_target_aid")
-                # Добавляем статистику
-                stats_yz_aid = calculate_kpi_summary(df_source, "Объем предоставленной целевой помощи", start_date, end_date, category_filter="ЯЖивой")
-                col_stat1, col_stat2 = st.columns(2)
-                with col_stat1:
-                    st.metric("Всего за период", f"{stats_yz_aid['total']:,.0f} ₽")
-                with col_stat2:
-                    st.metric("Среднее в месяц", f"{stats_yz_aid['monthly_avg']:,.0f} ₽")
+    # --- "ЯЖивой" ---
+    with prog_tabs[2]:
+        st.markdown("### Программа \"ЯЖивой\"")
+        
+        # Финансовые показатели
+        render_program_financials_chart("ЯЖивой", start_date, end_date)
+        
+        st.divider()
+        st.markdown("**KPI показатели:**")
+        
+        c_yz1, c_yz2 = st.columns(2)
+        with c_yz1:
+            st.plotly_chart(render_chart(df_viz_yz, "Количество обслуженных благополучателей", category_filter="ЯЖивой"), use_container_width=True, key="chart_yz_beneficiaries")
+            # Добавляем статистику
+            stats_yz_benef = calculate_kpi_summary(df_source, "Количество обслуженных благополучателей", start_date, end_date, category_filter="ЯЖивой")
+            col_stat1, col_stat2 = st.columns(2)
+            with col_stat1:
+                st.metric("Всего за период", f"{stats_yz_benef['total']:.0f}")
+            with col_stat2:
+                st.metric("Среднее в месяц", f"{stats_yz_benef['monthly_avg']:.1f}")
+        
+        with c_yz2:
+            st.plotly_chart(render_chart(df_viz_yz, "Объем предоставленной целевой помощи", category_filter="ЯЖивой"), use_container_width=True, key="chart_yz_target_aid")
+            # Добавляем статистику
+            stats_yz_aid = calculate_kpi_summary(df_source, "Объем предоставленной целевой помощи", start_date, end_date, category_filter="ЯЖивой")
+            col_stat1, col_stat2 = st.columns(2)
+            with col_stat1:
+                st.metric("Всего за период", f"{stats_yz_aid['total']:,.0f} ₽")
+            with col_stat2:
+                st.metric("Среднее в месяц", f"{stats_yz_aid['monthly_avg']:,.0f} ₽")
             
             st.plotly_chart(render_chart(df_viz_yz, "Индекс достижения социальной адаптации", category_filter="ЯЖивой"), use_container_width=True, key="chart_yz_social_adapt")
             # Добавляем статистику
