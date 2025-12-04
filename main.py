@@ -48,6 +48,7 @@ try:
         calculate_profitability,
         get_program_financials_for_period,
         get_aggregated_financials_for_period,
+        get_company_wide_financials_for_period,
         PROGRAMS
     )
     FINANCIALS_MODULE_AVAILABLE = True
@@ -1005,6 +1006,138 @@ def render_program_financials_chart(program_name, start_date, end_date, is_aggre
         )
         
         st.plotly_chart(fig_profitability, use_container_width=True)
+
+
+def render_company_wide_financials_chart(start_date, end_date):
+    """
+    Отображает общие финансовые показатели компании (все программы + уставная деятельность)
+    - Показывает графики доходов, расходов и окупаемости
+    - Добавляет накопленный итог за выбранный период
+    
+    Args:
+        start_date: дата начала периода
+        end_date: дата окончания периода
+    """
+    if not FINANCIALS_MODULE_AVAILABLE:
+        st.warning("⚠️ Модуль финансов недоступен")
+        return
+    
+    # Получаем агрегированные данные по всей компании
+    df = get_company_wide_financials_for_period(start_date, end_date)
+    
+    if df.empty:
+        st.info("📊 Нет финансовых данных за выбранный период")
+        return
+    
+    # Форматируем период для отображения
+    month_names_ru = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн",
+                      "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
+    
+    df['period_label'] = df.apply(
+        lambda row: f"{month_names_ru[int(row['month'])-1]} {int(row['year'])}",
+        axis=1
+    )
+    
+    # Рассчитываем накопленный итог
+    df['cumulative_income'] = df['income'].cumsum()
+    df['cumulative_expenses'] = df['expenses'].cumsum()
+    df['cumulative_profit'] = df['cumulative_income'] - df['cumulative_expenses']
+    
+    # Создаем графики
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # ОБЪЕДИНЕННЫЙ график доходов и расходов
+        fig_finances = go.Figure()
+        
+        # Добавляем столбцы доходов
+        fig_finances.add_trace(go.Bar(
+            x=df['period_label'],
+            y=df['income'],
+            name='Доходы',
+            marker_color='#2E7D32',
+            text=df['income'].apply(lambda x: f'{x:,.2f}'),
+            textposition='outside',
+            textfont=dict(size=10)
+        ))
+        
+        # Добавляем столбцы расходов
+        fig_finances.add_trace(go.Bar(
+            x=df['period_label'],
+            y=df['expenses'],
+            name='Расходы',
+            marker_color='#C62828',
+            text=df['expenses'].apply(lambda x: f'{x:,.2f}'),
+            textposition='outside',
+            textfont=dict(size=10)
+        ))
+        
+        # Добавляем линию накопленной прибыли
+        fig_finances.add_trace(go.Scatter(
+            x=df['period_label'],
+            y=df['cumulative_profit'],
+            name='Накопленная прибыль',
+            line=dict(color='#1976D2', width=3, dash='dash'),
+            yaxis='y2',
+            mode='lines+markers',
+            text=df['cumulative_profit'].apply(lambda x: f'{x:,.2f}'),
+            textposition='top center',
+            textfont=dict(size=9)
+        ))
+        
+        fig_finances.update_layout(
+            title="Общие доходы и расходы компании",
+            xaxis_title="Период",
+            yaxis_title="Сумма, ₽",
+            height=350,
+            margin=dict(l=20, r=20, t=40, b=20),
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            barmode='group',  # Столбцы рядом друг с другом
+            yaxis=dict(
+                tickformat=',.2f'  # Форматирование оси Y до 2 знаков
+            ),
+            yaxis2=dict(
+                title="Накопленная прибыль, ₽",
+                overlaying='y',
+                side='right',
+                tickformat=',.2f'  # Форматирование второй оси Y до 2 знаков
+            )
+        )
+        
+        st.plotly_chart(fig_finances, use_container_width=True)
+    
+    with col2:
+        # График окупаемости
+        fig_profitability = go.Figure()
+        
+        fig_profitability.add_trace(go.Scatter(
+            x=df['period_label'],
+            y=df['profitability'],
+            name='Окупаемость, %',
+            line=dict(color='#1976D2', width=2),
+            mode='lines+markers',
+            text=df['profitability'].apply(lambda x: f'{x:.2f}%'),
+            textposition='top center',
+            textfont=dict(size=10)
+        ))
+        
+        # Добавляем нулевую линию для окупаемости
+        fig_profitability.add_hline(y=0, line_dash="solid", line_color="gray", line_width=1, opacity=0.5)
+        
+        fig_profitability.update_layout(
+            title="Общая окупаемость компании",
+            xaxis_title="Период",
+            yaxis_title="Окупаемость, %",
+            height=350,
+            margin=dict(l=20, r=20, t=40, b=20),
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        
+        st.plotly_chart(fig_profitability, use_container_width=True)
+
+
     
     # Отображаем итоговые показатели
     total_income = df['income'].sum()
@@ -1217,6 +1350,14 @@ if menu == "Сводный Дашборд":
     
     # ВСЕГДА отображаем программы и их финансовые данные
 
+    # === ОБЩИЕ ФИНАНСОВЫЕ ПОКАЗАТЕЛИ КОМПАНИИ ===
+    st.subheader("💰 Общие финансовые показатели")
+    st.markdown("*Включает все программы и уставную деятельность*")
+    render_company_wide_financials_chart(start_date, end_date)
+    
+    st.divider()
+    
+    # === ПРОГРАММЫ ===
     st.subheader("Программы")
     
     # Агрегируем данные по центрам перед отображением (только если есть KPI данные)

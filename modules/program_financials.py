@@ -563,3 +563,59 @@ def get_aggregated_financials_for_period(
     aggregated = aggregated.sort_values(['year', 'month'])
     
     return aggregated.reset_index(drop=True)
+
+
+def get_company_wide_financials_for_period(
+    start_date: date,
+    end_date: date
+) -> pd.DataFrame:
+    """
+    Получает агрегированные финансовые данные по ВСЕЙ компании за период
+    Включает все программы + уставную деятельность
+    
+    Args:
+        start_date: начало периода
+        end_date: конец периода
+    
+    Returns:
+        DataFrame с колонками: year, month, income, expenses, profitability
+    """
+    df = load_financials()
+    
+    if df.empty:
+        return pd.DataFrame(columns=['year', 'month', 'income', 'expenses', 'profitability'])
+    
+    # Фильтруем данные по периоду
+    df['date_temp'] = pd.to_datetime(
+        df['year'].astype(str) + '-' + df['month'].astype(str) + '-01'
+    )
+    
+    start_dt = pd.Timestamp(start_date)
+    end_dt = pd.Timestamp(end_date)
+    
+    period_data = df[
+        (df['date_temp'] >= start_dt.replace(day=1)) & 
+        (df['date_temp'] <= end_dt)
+    ].copy()
+    
+    if period_data.empty:
+        return pd.DataFrame(columns=['year', 'month', 'income', 'expenses', 'profitability'])
+    
+    # Группируем по году и месяцу, суммируя доходы и расходы ПО ВСЕМ программам
+    # Это включает все программы из PROGRAMS + уставную деятельность (если есть)
+    aggregated = period_data.groupby(['year', 'month']).agg({
+        'income': 'sum',
+        'expenses': 'sum'
+    }).reset_index()
+    
+    # Рассчитываем окупаемость
+    aggregated['profitability'] = aggregated.apply(
+        lambda row: calculate_profitability(row['income'], row['expenses']),
+        axis=1
+    )
+    
+    # Сортируем по году и месяцу
+    aggregated = aggregated.sort_values(['year', 'month'])
+    
+    return aggregated.reset_index(drop=True)
+
