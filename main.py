@@ -2287,8 +2287,10 @@ elif menu == "Финансы программ":
                 st.info("""
                 **Инструкция:**
                 * Для **редактирования**: кликните дважды по ячейке, измените значение и нажмите Enter
-                * Для **удаления**: выделите строки (галочкой слева) и нажмите кнопку "Удалить выбранные"
-                * После внесения изменений нажмите **"Сохранить изменения"**
+                * Для **удаления**: нажмите кнопку "🗑️ Удалить записи", выберите записи из списка и подтвердите удаление
+                * После редактирования нажмите **"💾 Сохранить изменения"**
+                
+                ⚠️ **Важно:** Удаление возможно только через кнопку "Удалить записи" с подтверждением
                 """)
                 
                 # Подготавливаем данные для редактора
@@ -2353,12 +2355,12 @@ elif menu == "Финансы программ":
                     "updated_at": None   # Скрываем
                 }
                 
-                # Редактируемая таблица
+                # Редактируемая таблица (БЕЗ возможности удаления строк напрямую)
                 edited_df = st.data_editor(
                     edit_df,
                     column_config=column_config,
                     use_container_width=True,
-                    num_rows="dynamic",  # Позволяет удалять строки
+                    num_rows="fixed",  # ИСПРАВЛЕНИЕ: запрещаем удаление через редактор
                     hide_index=True,
                     key="financial_data_editor"
                 )
@@ -2368,25 +2370,59 @@ elif menu == "Финансы программ":
                 
                 with col_save:
                     if st.button("💾 Сохранить изменения", use_container_width=True, type="primary"):
-                        # Пересчитываем окупаемость для всех записей
-                        edited_df['profitability'] = edited_df.apply(
-                            lambda row: calculate_profitability(row['income'], row['expenses']),
-                            axis=1
+                        # Проверяем, что количество строк не изменилось
+                        if len(edited_df) != len(edit_df):
+                            st.error("❌ Обнаружено изменение количества строк. Используйте кнопку 'Удалить выбранные' для удаления записей.")
+                        else:
+                            # Пересчитываем окупаемость для всех записей
+                            edited_df['profitability'] = edited_df.apply(
+                                lambda row: calculate_profitability(row['income'], row['expenses']),
+                                axis=1
+                            )
+                            
+                            # Обновляем updated_at
+                            edited_df['updated_at'] = datetime.now()
+                            
+                            # Удаляем вспомогательную колонку
+                            if 'month_name' in edited_df.columns:
+                                edited_df = edited_df.drop(columns=['month_name'])
+                            
+                            # Сохраняем
+                            if save_financials(edited_df):
+                                st.success("✅ Изменения сохранены!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Ошибка сохранения данных")
+                
+                with col_delete:
+                    # Форма для удаления записей
+                    with st.popover("🗑️ Удалить записи", use_container_width=True):
+                        st.warning("**Внимание!** Удаление записей необратимо.")
+                        
+                        # Выбор записей для удаления
+                        records_to_delete = st.multiselect(
+                            "Выберите записи для удаления:",
+                            options=range(len(edit_df)),
+                            format_func=lambda i: f"{edit_df.iloc[i]['program']} - {edit_df.iloc[i]['month_name']} {int(edit_df.iloc[i]['year'])}"
                         )
                         
-                        # Обновляем updated_at
-                        edited_df['updated_at'] = datetime.now()
-                        
-                        # Удаляем вспомогательную колонку
-                        if 'month_name' in edited_df.columns:
-                            edited_df = edited_df.drop(columns=['month_name'])
-                        
-                        # Сохраняем
-                        if save_financials(edited_df):
-                            st.success("✅ Изменения сохранены!")
-                            st.rerun()
-                        else:
-                            st.error("❌ Ошибка сохранения данных")
+                        if records_to_delete:
+                            st.info(f"Будет удалено записей: {len(records_to_delete)}")
+                            
+                            if st.button("⚠️ Подтвердить удаление", type="secondary"):
+                                # Удаляем выбранные записи
+                                df_to_save = edit_df.drop(edit_df.index[records_to_delete]).copy()
+                                
+                                # Удаляем вспомогательную колонку
+                                if 'month_name' in df_to_save.columns:
+                                    df_to_save = df_to_save.drop(columns=['month_name'])
+                                
+                                # Сохраняем
+                                if save_financials(df_to_save):
+                                    st.success(f"✅ Удалено записей: {len(records_to_delete)}")
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Ошибка удаления данных")
                 
                 # Статистика
                 st.divider()
