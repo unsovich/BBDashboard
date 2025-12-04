@@ -784,17 +784,19 @@ def render_multi_channel_dashboard() -> None:
         avg_cof = (total_costs / total_collected) if total_collected > 0 else 0
         
         # Отображение KPI группы
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
         
         with kpi1:
-            st.metric("Всего собрано", f"{total_collected:,.0f} ₽")
+            st.metric("Нужно собрать", f"{total_target:,.0f} ₽")
         with kpi2:
+            st.metric("Всего собрано", f"{total_collected:,.0f} ₽")
+        with kpi3:
             progress = (total_collected / total_target * 100) if total_target > 0 else 0
             st.metric("Общий прогресс", f"{progress:.1f}%")
-        with kpi3:
+        with kpi4:
             delta_color = "normal" if avg_roi >= 250 else "inverse"
             st.metric("Общий ROI", f"{avg_roi:.1f}%", delta=f"{avg_roi - 250:.1f}%")
-        with kpi4:
+        with kpi5:
             st.metric("Общий CoF", f"{avg_cof:.2f}")
             
         st.divider()
