@@ -1134,55 +1134,21 @@ def render_chart(df_grouped, kpi_name, title_prefix="Динамика", category
 
 st.sidebar.title("🕊️ Синяя Птица")
 
-# --- ИНФОРМАЦИЯ ОБ ИСТОЧНИКЕ ДАННЫХ ---
-if 'data_source' in st.session_state:
-    source_info = {
-        "loaded_from_file": ("💾", "Данные загружены из файла"),
-        "generated_mock_data": ("🔧", "Тестовые данные (первый запуск)"),
-        "corrupted_file_recovered": ("⚠️", "Восстановлено после ошибки")
-    }
-    icon, message = source_info.get(st.session_state.data_source, ("ℹ️", "Неизвестно"))
-    st.sidebar.info(f"{icon} **Источник данных:**\n{message}")
+# --- БОКОВОЕ МЕНЮ ---
+menu = st.sidebar.radio(
+    "",
+    ["Сводный Дашборд", "Динамика Сборов", "SMM Эффективность", "Корпоративный Фандрайзинг", "Мониторинг Кампаний", "Финансы программ", "Ввод данных KPI", "История (Редактор)"],
+    label_visibility="collapsed"
+)
 
-# --- КНОПКА СБРОСА ДАННЫХ (РЕМОНТ) ---
-with st.sidebar.expander("⚙️ Управление данными", expanded=False):
-    st.markdown("**Внимание:** Эта операция удалит ВСЕ данные!")
-    
-    if st.button("🚨 Очистить всю базу данных", key="reset_all_data"):
-        # Полная очистка - создаем пустую базу
-        st.session_state.kpi_history = pd.DataFrame(columns=REQUIRED_COLUMNS)
-        save_to_file(st.session_state.kpi_history)
-        st.session_state.data_source = "manually_cleared"
-        st.success("✅ База данных очищена")
-        st.rerun()
-    
-    st.divider()
-    
-    if st.button("🔄 Восстановить тестовые данные", key="restore_mock_data"):
-        # Генерируем новые тестовые данные
-        st.session_state.kpi_history = generate_mock_data()
-        save_to_file(st.session_state.kpi_history)
-        st.session_state.data_source = "generated_mock_data"
-        st.success("✅ Тестовые данные восстановлены")
-        st.rerun()
-
-# --- ИНФОРМАЦИЯ О СОХРАНЕНИИ ---
-if os.path.exists(BACKUP_FILE):
-    file_time = datetime.fromtimestamp(os.path.getmtime(BACKUP_FILE))
-    st.sidebar.info(f"💾 Последнее сохранение:\n{file_time.strftime('%d.%m.%Y %H:%M:%S')}")
+st.sidebar.divider()
 
 st.sidebar.markdown(f"**Записей в базе:** {len(st.session_state.kpi_history)}")
 
-# --- БОКОВОЕ МЕНЮ ---
-with st.sidebar:
-    st.header("Навигация")
-    menu = st.selectbox(
-        "Выберите раздел:",
-        ["Сводный Дашборд", "Динамика Сборов", "SMM Эффективность", "Корпоративный Фандрайзинг", "Мониторинг Кампаний", "Финансы программ", "Ввод данных KPI", "История (Редактор)"]
-    )
-    
-    st.divider()
-    st.markdown("### Управление данными")
+# --- ИНФОРМАЦИЯ О СОХРАНЕНИИ (внизу) ---
+if os.path.exists(BACKUP_FILE):
+    file_time = datetime.fromtimestamp(os.path.getmtime(BACKUP_FILE))
+    st.sidebar.info(f"💾 Последнее сохранение:\n{file_time.strftime('%d.%m.%Y %H:%M:%S')}")
 
 # --- 1. СВОДНЫЙ ДАШБОРД ---
 if menu == "Сводный Дашборд":
