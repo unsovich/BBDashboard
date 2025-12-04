@@ -1401,7 +1401,7 @@ if menu == "Сводный Дашборд":
         df_viz_yz = empty_df_structure.copy()
         df_source_with_agg = df_source
     
-    prog_tabs = st.tabs(["Верь в себя", "Нужна помощь", "ЯЖивой"])
+    prog_tabs = st.tabs(["Верь в себя", "Нужна помощь", "ЯЖивой", "Уставная деятельность"])
         
     # --- "Верь в себя" с подвкладками по центрам ---
     with prog_tabs[0]:
@@ -1570,13 +1570,22 @@ if menu == "Сводный Дашборд":
             # Добавляем статистику
             stats_yz_adapt = calculate_kpi_summary(df_source, "Индекс достижения социальной адаптации", start_date, end_date, category_filter="ЯЖивой")
             st.metric("Среднее в месяц", f"{stats_yz_adapt['monthly_avg']:.2f}")
+    
+    # --- "Уставная деятельность" ---
+    with prog_tabs[3]:
+        st.markdown("### Уставная деятельность")
         
-        # --- ОБЩИЙ ФИНАНСОВЫЙ ПОКАЗАТЕЛЬ (внизу) ---
-        st.divider()
-        st.subheader("Ключевые показатели")
+        # Финансовые показатели
+        render_program_financials_chart("Уставная деятельность", start_date, end_date)
         
-        kpi_finance = "Выполнение общего плана фандрайзинга, %"
-        st.plotly_chart(render_chart(df_viz, kpi_finance), use_container_width=True)
+        st.info("ℹ️ Уставная деятельность не имеет специфических KPI показателей. Отображаются только финансовые данные.")
+    
+    # --- ОБЩИЙ ФИНАНСОВЫЙ ПОКАЗАТЕЛЬ (внизу) ---
+    st.divider()
+    st.subheader("Ключевые показатели")
+    
+    kpi_finance = "Выполнение общего плана фандрайзинга, %"
+    st.plotly_chart(render_chart(df_viz, kpi_finance), use_container_width=True)
 
 
 # --- 1.1 ДИНАМИКА СБОРОВ (НОВЫЙ РАЗДЕЛ) ---
