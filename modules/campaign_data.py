@@ -22,7 +22,8 @@ try:
         supabase_delete,
         supabase_select,
         dataframe_to_supabase,
-        replace_table_data
+        replace_table_data,
+        save_dataframe_incrementally
     )
     SUPABASE_MODULE_AVAILABLE = True
 except ImportError:
@@ -191,9 +192,14 @@ def save_campaigns(df: pd.DataFrame) -> bool:
             if 'id' in df_to_save.columns:
                 df_to_save = df_to_save.drop(columns=['id'])
             
-            # ИСПРАВЛЕНИЕ: Используем replace_table_data вместо dataframe_to_supabase
-            # Это удаляет все старые записи перед вставкой новых, предотвращая дубликаты
-            success = replace_table_data(df_to_save, 'campaigns')
+            # ИСПРАВЛЕНИЕ: Используем save_dataframe_incrementally вместо replace_table_data
+            # Это безопасно обновляет только кампании, не трогая другие таблицы
+            # campaign_id - уникальный идентификатор для каждой кампании
+            success = save_dataframe_incrementally(
+                df_to_save,
+                'campaigns',
+                unique_columns=['campaign_id']
+            )
             if success:
                 print(f"✅ Saved {len(df)} campaigns to Supabase")
                 return True
@@ -476,9 +482,14 @@ def save_collection_history(df: pd.DataFrame) -> bool:
             if 'id' in df_to_save.columns:
                 df_to_save = df_to_save.drop(columns=['id'])
             
-            # ИСПРАВЛЕНИЕ: Используем replace_table_data вместо dataframe_to_supabase
-            # Это удаляет все старые записи перед вставкой новых, предотвращая дубликаты
-            success = replace_table_data(df_to_save, 'collection_history')
+            # ИСПРАВЛЕНИЕ: Используем save_dataframe_incrementally вместо replace_table_data
+            # Это безопасно обновляет только историю сборов, не трогая другие таблицы
+            # history_id - уникальный идентификатор для каждой записи
+            success = save_dataframe_incrementally(
+                df_to_save,
+                'collection_history',
+                unique_columns=['history_id']
+            )
             if success:
                 return True
         except Exception as e:

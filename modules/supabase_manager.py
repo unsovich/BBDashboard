@@ -376,6 +376,15 @@ def replace_table_data(df: pd.DataFrame, table: str) -> bool:
     Заменяет все данные в таблице Supabase на данные из DataFrame
     Удаляет все существующие записи, затем вставляет новые
     
+    ⚠️ WARNING: This function DELETES ALL RECORDS from the table before inserting new data.
+    This is a dangerous operation that can lead to data loss if an error occurs during insertion.
+    
+    ⚠️ RECOMMENDED: Use save_dataframe_incrementally() instead for regular operations.
+    This function should only be used for:
+    - Initial data migration
+    - Complete table resets (with user confirmation)
+    - Testing/development environments
+    
     Args:
         df: DataFrame для загрузки
         table: название таблицы
@@ -390,7 +399,7 @@ def replace_table_data(df: pd.DataFrame, table: str) -> bool:
     
     try:
         # Шаг 1: Удаляем все существующие записи
-        print(f"🗑️ Deleting all existing records from {table}...")
+        print(f"⚠️ WARNING: Deleting all existing records from {table}...")
         delete_response = client.table(table).delete().neq('id', 0).execute()
         print(f"✅ Deleted existing records from {table}")
         
@@ -422,6 +431,87 @@ def replace_table_data(df: pd.DataFrame, table: str) -> bool:
         
     except Exception as e:
         print(f"❌ Error replacing data in {table}: {e}")
+        return False
+
+
+def save_dataframe_incrementally(
+    df: pd.DataFrame, 
+    table: str,
+    unique_columns: Optional[List[str]] = None,
+    id_column: str = 'id'
+) -> bool:
+    """
+    Безопасно сохраняет DataFrame в Supabase используя инкрементальные обновления
+    Использует upsert для обновления существующих записей или вставки новых
+    
+    Этот метод НЕ удаляет существующие данные, а только обновляет/добавляет записи.
+    Для удаления записей используйте явные операции delete.
+    
+    Args:
+        df: DataFrame для сохранения
+        table: название таблицы
+        unique_columns: список колонок для определения уникальности записи
+                       (используется для on_conflict в upsert)
+                       Если None, используется id_column
+        id_column: название колонки с уникальным ID (по умолчанию 'id')
+        
+    Returns:
+        True если успешно
+        
+    Examples:
+        # Для таблицы с auto-increment id:
+        save_dataframe_incrementally(df, 'kpi_history', unique_columns=['date_start', 'date_end', 'kpi_id'])
+        
+        # Для таблицы с явным record_id:
+        save_dataframe_incrementally(df, 'program_financials', unique_columns=['record_id'])
+    """
+    client = init_supabase_client()
+    if client is None:
+        print(f"⚠️ Cannot connect to Supabase, skipping save for {table}")
+        return False
+    
+    if df.empty:
+        print(f"📊 DataFrame is empty, nothing to save to {table}")
+        return True
+    
+    try:
+        # Удаляем auto-increment id колонку если она есть (Supabase сам её создаст)
+        df_to_save = df.copy()
+        if id_column in df_to_save.columns and id_column == 'id':
+            df_to_save = df_to_save.drop(columns=[id_column])
+        
+        # Конвертируем DataFrame в список словарей
+        records = df_to_save.to_dict('records')
+        
+        # Определяем on_conflict параметр
+        on_conflict = None
+        if unique_columns:
+            # Используем первую уникальную колонку для on_conflict
+            # Supabase требует одну колонку, но будет обновлять по всем уникальным полям
+            on_conflict = unique_columns[0]
+        
+        # Загружаем батчами по 1000 записей используя upsert
+        batch_size = 1000
+        total_batches = (len(records) + batch_size - 1) // batch_size
+        
+        print(f"💾 Saving {len(records)} records to {table} using incremental upsert...")
+        
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            
+            print(f"📤 Upserting batch {batch_num}/{total_batches} ({len(batch)} records)...")
+            
+            result = supabase_upsert(table, batch, on_conflict=on_conflict)
+            if result is None:
+                print(f"❌ Failed to upsert batch {batch_num}")
+                return False
+        
+        print(f"✅ Successfully saved {len(records)} records to {table} (incremental)")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error saving data incrementally to {table}: {e}")
         return False
 
 

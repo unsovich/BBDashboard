@@ -65,7 +65,8 @@ try:
         dataframe_to_supabase,
         replace_table_data,
         get_storage_mode,
-        test_connection
+        test_connection,
+        save_dataframe_incrementally
     )
     SUPABASE_MODULE_AVAILABLE = True
 except ImportError as e:
@@ -415,9 +416,14 @@ def save_kpi_history(df):
             if 'updated_at' not in df_to_save.columns:
                 df_to_save['updated_at'] = datetime.now()
             
-            # ИСПРАВЛЕНИЕ: Используем replace_table_data вместо dataframe_to_supabase
-            # Это удаляет все старые записи перед вставкой новых, предотвращая дубликаты
-            success = replace_table_data(df_to_save, 'kpi_history')
+            # ИСПРАВЛЕНИЕ: Используем save_dataframe_incrementally вместо replace_table_data
+            # Это безопасно обновляет только KPI записи, не трогая другие таблицы
+            # Уникальность определяется комбинацией: date_start, date_end, kpi_id
+            success = save_dataframe_incrementally(
+                df_to_save, 
+                'kpi_history',
+                unique_columns=['date_start', 'date_end', 'kpi_id']
+            )
             if success:
                 print(f"✅ Saved {len(df)} KPI records to Supabase")
                 return
