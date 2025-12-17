@@ -5,9 +5,12 @@
 
 import os
 import pandas as pd
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, TYPE_CHECKING
 from datetime import datetime, date
 import streamlit as st
+
+if TYPE_CHECKING:
+    from supabase import Client
 
 try:
     from supabase import create_client, Client
@@ -25,7 +28,7 @@ except ImportError:
 
 
 # Глобальная переменная для клиента Supabase
-_supabase_client: Optional[Client] = None
+_supabase_client: Optional['Client'] = None
 
 
 def get_supabase_credentials() -> Dict[str, Optional[str]]:
@@ -63,7 +66,7 @@ def get_supabase_credentials() -> Dict[str, Optional[str]]:
     return credentials
 
 
-def init_supabase_client() -> Optional[Client]:
+def init_supabase_client() -> Optional['Client']:
     """
     Инициализирует клиент Supabase
     
@@ -399,9 +402,12 @@ def replace_table_data(df: pd.DataFrame, table: str) -> bool:
     
     try:
         # Шаг 1: Удаляем все существующие записи
-        print(f"⚠️ WARNING: Deleting all existing records from {table}...")
+        print(f"⚠️⚠️⚠️ WARNING: About to DELETE ALL records from table '{table}' ⚠️⚠️⚠️")
+        print(f"📊 Will insert {len(df)} records after deletion")
+        
         delete_response = client.table(table).delete().neq('id', 0).execute()
-        print(f"✅ Deleted existing records from {table}")
+        
+        print(f"✅ Deleted existing records from table '{table}'")
         
         # Шаг 2: Вставляем новые данные
         if df.empty:
@@ -419,18 +425,20 @@ def replace_table_data(df: pd.DataFrame, table: str) -> bool:
             batch = records[i:i + batch_size]
             batch_num = i // batch_size + 1
             
-            print(f"📤 Uploading batch {batch_num}/{total_batches} ({len(batch)} records)...")
+            print(f"📤 Uploading batch {batch_num}/{total_batches} ({len(batch)} records) to '{table}'...")
             
             result = supabase_insert(table, batch)
             if result is None:
-                print(f"❌ Failed to upload batch {batch_num}")
+                print(f"❌ Failed to upload batch {batch_num} to '{table}'")
                 return False
         
-        print(f"✅ Successfully replaced all data in {table} ({len(records)} records)")
+        print(f"✅ Successfully replaced all data in '{table}' ({len(records)} records)")
         return True
         
     except Exception as e:
-        print(f"❌ Error replacing data in {table}: {e}")
+        print(f"❌ Error replacing data in '{table}': {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
