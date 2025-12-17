@@ -442,7 +442,7 @@ def save_dataframe_incrementally(
 ) -> bool:
     """
     Безопасно сохраняет DataFrame в Supabase используя инкрементальные обновления
-    Использует upsert для обновления существующих записей или вставки новых
+    Использует стратегию: загрузить существующие → объединить → сохранить все
     
     Этот метод НЕ удаляет существующие данные, а только обновляет/добавляет записи.
     Для удаления записей используйте явные операции delete.
@@ -451,7 +451,6 @@ def save_dataframe_incrementally(
         df: DataFrame для сохранения
         table: название таблицы
         unique_columns: список колонок для определения уникальности записи
-                       (используется для on_conflict в upsert)
                        Если None, используется id_column
         id_column: название колонки с уникальным ID (по умолчанию 'id')
         
@@ -459,11 +458,11 @@ def save_dataframe_incrementally(
         True если успешно
         
     Examples:
-        # Для таблицы с auto-increment id:
-        save_dataframe_incrementally(df, 'kpi_history', unique_columns=['date_start', 'date_end', 'kpi_id'])
-        
-        # Для таблицы с явным record_id:
+        # Для таблицы с record_id как уникальным идентификатором:
         save_dataframe_incrementally(df, 'program_financials', unique_columns=['record_id'])
+        
+        # Для таблицы с композитным уникальным ключом:
+        save_dataframe_incrementally(df, 'kpi_history', unique_columns=['date_start', 'date_end', 'kpi_id'])
     """
     client = init_supabase_client()
     if client is None:
@@ -475,43 +474,73 @@ def save_dataframe_incrementally(
         return True
     
     try:
-        # Удаляем auto-increment id колонку если она есть (Supabase сам её создаст)
+        # Шаг 1: Загружаем существующие данные из таблицы
+        print(f"📥 Loading existing data from {table}...")
+        existing_data = supabase_select(table)
+        
+        if existing_data is None:
+            existing_data = []
+        
+        existing_df = pd.DataFrame(existing_data) if existing_data else pd.DataFrame()
+        
+        # Шаг 2: Подготавливаем новый DataFrame
         df_to_save = df.copy()
+        
+        # Удаляем auto-increment id колонку если она есть
         if id_column in df_to_save.columns and id_column == 'id':
             df_to_save = df_to_save.drop(columns=[id_column])
         
-        # Конвертируем DataFrame в список словарей
-        records = df_to_save.to_dict('records')
-        
-        # Определяем on_conflict параметр
-        on_conflict = None
-        if unique_columns:
-            # Используем первую уникальную колонку для on_conflict
-            # Supabase требует одну колонку, но будет обновлять по всем уникальным полям
-            on_conflict = unique_columns[0]
-        
-        # Загружаем батчами по 1000 записей используя upsert
-        batch_size = 1000
-        total_batches = (len(records) + batch_size - 1) // batch_size
-        
-        print(f"💾 Saving {len(records)} records to {table} using incremental upsert...")
-        
-        for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
-            batch_num = i // batch_size + 1
+        # Шаг 3: Объединяем данные
+        if not existing_df.empty and unique_columns:
+            # Удаляем id из существующих данных для корректного слияния
+            if id_column in existing_df.columns and id_column == 'id':
+                existing_df = existing_df.drop(columns=[id_column])
             
-            print(f"📤 Upserting batch {batch_num}/{total_batches} ({len(batch)} records)...")
+            # Удаляем из существующих данных записи, которые есть в новом DataFrame
+            # (они будут заменены новыми версиями)
+            print(f"🔄 Merging data based on unique columns: {unique_columns}")
             
-            result = supabase_upsert(table, batch, on_conflict=on_conflict)
-            if result is None:
-                print(f"❌ Failed to upsert batch {batch_num}")
-                return False
+            # Создаем маску для записей, которые НЕ должны быть обновлены
+            merge_key = unique_columns[0] if len(unique_columns) == 1 else unique_columns
+            
+            # Находим записи в existing_df, которых нет в df_to_save
+            if isinstance(merge_key, list):
+                # Композитный ключ
+                existing_keys = existing_df[merge_key].apply(tuple, axis=1)
+                new_keys = df_to_save[merge_key].apply(tuple, axis=1)
+                mask = ~existing_keys.isin(new_keys)
+            else:
+                # Одиночный ключ
+                mask = ~existing_df[merge_key].isin(df_to_save[merge_key])
+            
+            # Оставляем только записи, которые не обновляются
+            existing_df_filtered = existing_df[mask]
+            
+            # Объединяем: старые неизмененные записи + новые/обновленные записи
+            combined_df = pd.concat([existing_df_filtered, df_to_save], ignore_index=True)
+            
+            print(f"📊 Combined: {len(existing_df_filtered)} existing + {len(df_to_save)} new/updated = {len(combined_df)} total")
+        else:
+            # Если нет существующих данных или не указаны unique_columns, просто добавляем
+            combined_df = pd.concat([existing_df, df_to_save], ignore_index=True)
+            print(f"📊 Adding {len(df_to_save)} new records to {len(existing_df)} existing")
         
-        print(f"✅ Successfully saved {len(records)} records to {table} (incremental)")
-        return True
+        # Шаг 4: Сохраняем объединенные данные
+        # Используем replace_table_data, но теперь это безопасно, так как мы сохраняем ВСЕ данные
+        print(f"💾 Saving {len(combined_df)} total records to {table}...")
+        success = replace_table_data(combined_df, table)
+        
+        if success:
+            print(f"✅ Successfully saved {len(df_to_save)} records to {table} (incremental)")
+            return True
+        else:
+            print(f"❌ Failed to save to {table}")
+            return False
         
     except Exception as e:
         print(f"❌ Error saving data incrementally to {table}: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
